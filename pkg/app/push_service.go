@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	configsvc "github.com/godeps/gonacos/pkg/config"
 	namingsvc "github.com/godeps/gonacos/pkg/naming"
@@ -229,10 +231,11 @@ func normalizeNamespace(n string) string {
 // that the SDK expects on the BiRequestStream.
 func buildConfigChangeNotify(namespaceID, groupName, dataID string) grpc.Payload {
 	body := map[string]any{
-		"group":  groupName,
-		"dataId": dataID,
-		"tenant": normalizeNamespace(namespaceID),
-		"module": "config",
+		"group":      groupName,
+		"dataId":     dataID,
+		"tenant":     normalizeNamespace(namespaceID),
+		"module":     "config",
+		"requestId":  nextPushID(),
 	}
 	bodyBytes, _ := json.Marshal(body)
 	return grpc.Payload{
@@ -271,13 +274,15 @@ func buildNotifySubscriber(naming *namingsvc.Service, namespaceID, groupName, se
 		"serviceName": serviceName,
 		"groupName":   groupName,
 		"module":      "naming",
+		"requestId":   nextPushID(),
 		"serviceInfo": map[string]any{
-			"name":      serviceName,
-			"groupName": groupName,
-			"clusters":  "",
-			"hosts":     hosts,
-			"valid":     true,
-			"allIPs":    false,
+			"name":        serviceName,
+			"groupName":   groupName,
+			"clusters":    "",
+			"hosts":       hosts,
+			"valid":       true,
+			"allIPs":      false,
+			"lastRefTime": currentMillis(),
 		},
 	}
 	bodyBytes, _ := json.Marshal(body)
@@ -288,4 +293,16 @@ func buildNotifySubscriber(naming *namingsvc.Service, namespaceID, groupName, se
 		},
 		Body: grpc.Any{Value: bodyBytes},
 	}, nil
+}
+
+// pushIDSeq is a monotonic counter used to generate unique request IDs for
+// server-pushed ConfigChangeNotifyRequest and NotifySubscriberRequest frames.
+// The SDK's NotifySubscriberRequest handler registers a zero-value
+// NamingRequest whose embedded *Request is nil; including a requestId in the
+// JSON body makes json.Unmarshal allocate the embedded *Request so the SDK's
+// subsequent PutAllHeaders call does not dereference nil.
+var pushIDSeq uint64
+
+func nextPushID() string {
+	return fmt.Sprintf("push-%d-%d", time.Now().UnixNano(), atomic.AddUint64(&pushIDSeq, 1))
 }

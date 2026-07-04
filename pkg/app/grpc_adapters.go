@@ -3,6 +3,8 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
+	"time"
 
 	"github.com/godeps/gonacos/pkg/ai"
 	configsvc "github.com/godeps/gonacos/pkg/config"
@@ -49,6 +51,22 @@ type sdkServiceListRequest struct {
 	PageSize    int    `json:"pageSize"`
 	Selector    string `json:"selector"`
 }
+
+// currentMillis returns a strictly-increasing timestamp for serviceInfo
+// lastRefTime. The SDK's ProcessService drops responses where
+// oldDomain.LastRefTime >= service.LastRefTime, so back-to-back RPCs in the
+// same millisecond would be treated as stale. We use a monotonic counter
+// (seeded at startup from the wall clock) to guarantee strict increase across
+// calls regardless of clock adjustments.
+func currentMillis() int64 {
+	return int64(atomic.AddUint64(&lastRefSeq, 1))
+}
+
+// lastRefSeq is a monotonic counter ensuring each serviceInfo response carries
+// a strictly greater lastRefTime than the prior one. It is seeded at package
+// initialization with the current wall-clock nanoseconds so values are
+// roughly aligned with real time while remaining strictly monotonic.
+var lastRefSeq = uint64(time.Now().UnixNano())
 
 // namingGRPCAdapter exposes the naming service through the gRPC adapter
 // interface. The SDK serializes requests as JSON inside google.protobuf.Any.
@@ -139,12 +157,13 @@ func (a namingGRPCAdapter) SubscribeFromGRPC(body []byte, clientIP string) (any,
 		})
 	}
 	return map[string]any{
-		"name":      req.ServiceName,
-		"groupName": req.Group,
-		"clusters":  req.Cluster,
-		"hosts":     hosts,
-		"valid":     true,
-		"allIPs":    false,
+		"name":        req.ServiceName,
+		"groupName":   req.Group,
+		"clusters":    req.Cluster,
+		"hosts":       hosts,
+		"valid":       true,
+		"allIPs":      false,
+		"lastRefTime": currentMillis(),
 	}, nil
 }
 
@@ -181,12 +200,13 @@ func (a namingGRPCAdapter) QueryServiceFromGRPC(body []byte) (any, error) {
 		})
 	}
 	return map[string]any{
-		"name":      req.ServiceName,
-		"groupName": req.Group,
-		"clusters":  req.Cluster,
-		"hosts":     hosts,
-		"valid":     true,
-		"allIPs":    false,
+		"name":        req.ServiceName,
+		"groupName":   req.Group,
+		"clusters":    req.Cluster,
+		"hosts":       hosts,
+		"valid":       true,
+		"allIPs":      false,
+		"lastRefTime": currentMillis(),
 	}, nil
 }
 

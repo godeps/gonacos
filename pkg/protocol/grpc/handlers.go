@@ -110,18 +110,17 @@ func handleInstanceRequest(naming NamingAdapter, req Payload) (Payload, error) {
 		Namespace string `json:"namespace"`
 		Group     string `json:"group"`
 		Service   string `json:"serviceName"`
-		Op        string `json:"requestType"`
 	}
 	var r instanceRequest
 	if err := json.Unmarshal(req.Body.Value, &r); err != nil {
 		return Payload{}, NewStatusError(StatusInvalidArgument, "invalid instance request: "+err.Error())
 	}
-	op := strings.ToLower(strings.TrimSpace(r.Op))
+	op := strings.ToLower(strings.TrimSpace(r.Type))
 	if op == "" {
 		op = "register"
 	}
 	switch op {
-	case "register", "register_instance":
+	case "register", "register_instance", "registerinstance":
 		result, err := naming.RegisterInstanceFromGRPC(req.Body.Value)
 		if err != nil {
 			return buildErrorResponse("InstanceResponse", err), nil
@@ -132,7 +131,7 @@ func handleInstanceRequest(naming NamingAdapter, req Payload) (Payload, error) {
 			"message":    "ok",
 			"data":       result,
 		}), nil
-	case "deregister", "deregister_instance":
+	case "deregister", "deregister_instance", "deregisterinstance":
 		if err := naming.DeregisterInstanceFromGRPC(req.Body.Value); err != nil {
 			return buildErrorResponse("InstanceResponse", err), nil
 		}

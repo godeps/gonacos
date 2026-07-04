@@ -34,7 +34,7 @@ func registerAuthRoutes(register func(string, string, http.HandlerFunc), service
 		register(http.MethodPost, base, h.createPermission)
 		register(http.MethodDelete, base, h.deletePermission)
 		register(http.MethodGet, base+"/list", h.listPermissions)
-		register(http.MethodGet, base, h.hasPermission)
+		register(http.MethodGet, base+"/has", h.hasPermission)
 	}
 }
 

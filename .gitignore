@@ -9,4 +9,9 @@
 /.gonacos/
 **/.gonacos/
 /.last-run.json
+# Stale binaries produced by `go run ./examples/<name>` at repo root
+/auth
+/config
+/namespace
+/naming
 

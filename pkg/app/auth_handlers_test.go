@@ -207,7 +207,7 @@ func TestAuthPermissionCRUD(t *testing.T) {
 		"action":   {"r"},
 	}, auth, http.StatusOK)
 
-	body := doJSONWithHeaders(t, handler, http.MethodGet, "/v3/auth/permission?role=ops&resource=namespace:public&action=r", nil, auth, http.StatusOK)
+	body := doJSONWithHeaders(t, handler, http.MethodGet, "/v3/auth/permission/has?role=ops&resource=namespace:public&action=r", nil, auth, http.StatusOK)
 	if body.Data != true {
 		t.Fatalf("permission exists = %v, want true", body.Data)
 	}
@@ -218,7 +218,7 @@ func TestAuthPermissionCRUD(t *testing.T) {
 		"action":   {"r"},
 	}, auth, http.StatusOK)
 
-	body = doJSONWithHeaders(t, handler, http.MethodGet, "/v3/auth/permission?role=ops&resource=namespace:public&action=r", nil, auth, http.StatusOK)
+	body = doJSONWithHeaders(t, handler, http.MethodGet, "/v3/auth/permission/has?role=ops&resource=namespace:public&action=r", nil, auth, http.StatusOK)
 	if body.Data != false {
 		t.Fatalf("permission exists = %v, want false", body.Data)
 	}

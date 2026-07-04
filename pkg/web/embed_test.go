@@ -45,3 +45,46 @@ func TestConsoleHandlerCacheNoCache(t *testing.T) {
 		t.Fatalf("cache-control = %v, want no-cache", cc)
 	}
 }
+
+func TestSpaHandlerServesIndexAtRoot(t *testing.T) {
+	t.Parallel()
+	handler := SpaHandler()
+	req := httptest.NewRequest(http.MethodGet, "/v3/console/ui", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `id="root"`) {
+		t.Fatalf("missing React root div")
+	}
+}
+
+func TestSpaHandlerServesIndexAtTrailingSlash(t *testing.T) {
+	t.Parallel()
+	handler := SpaHandler()
+	req := httptest.NewRequest(http.MethodGet, "/v3/console/ui/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `id="root"`) {
+		t.Fatalf("missing React root div")
+	}
+}
+
+func TestSpaHandlerFallbackForUnknownPath(t *testing.T) {
+	t.Parallel()
+	handler := SpaHandler()
+	// /v3/console/ui/namespace does not exist as a file — SPA fallback.
+	req := httptest.NewRequest(http.MethodGet, "/v3/console/ui/namespace", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `id="root"`) {
+		t.Fatalf("SPA fallback should serve index.html")
+	}
+}

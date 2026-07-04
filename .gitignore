@@ -15,3 +15,8 @@
 /namespace
 /naming
 
+# React SPA build artifacts. node_modules is always ignored; dist/ is
+# committed so `go build` works out of the box without running `make web`.
+# Run `make web` after changing the React UI to regenerate dist/.
+/pkg/web/console-ui/node_modules/
+

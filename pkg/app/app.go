@@ -162,8 +162,11 @@ func NewHandlerWithServicesWithCoordinator(root string, services *ServiceBundle,
 	registerOpsRoutes(register, coord, registry)
 	registerStubRoutes(register, configSvc, namingSvc, aiSvc, clusterSvc)
 
-	mux.HandleFunc("/v3/console/ui", web.ConsoleHandler())
-	mux.HandleFunc("/v3/console/ui/", web.ConsoleHandler())
+	mux.Handle("GET /v3/console/ui", web.SpaHandler())
+	mux.Handle("GET /v3/console/ui/", web.SpaHandler())
+	// Legacy single-file console retained for backward compatibility.
+	mux.Handle("GET /v3/console/ui/legacy", web.ConsoleHandler())
+	mux.Handle("GET /v3/console/ui/legacy/", web.ConsoleHandler())
 
 	manifest, err := contract.Build(root)
 	if err != nil {
@@ -213,6 +216,15 @@ func stateHandler(w http.ResponseWriter, r *http.Request) {
 		"server_port":           requestPort(r),
 		"last_refresh_time":     strconv.FormatInt(now, 10),
 		"last_refresh_time_str": time.UnixMilli(now).Format(time.RFC3339),
+		// Fields expected by the Java React console (server-store.ts).
+		"login_page_enabled":    "true",
+		"auth_enabled":          "true",
+		"console_ui_enabled":    "true",
+		"auth_admin_request":    "true",
+		"auth_system_type":      "nacos",
+		"copilot_enabled":       "false",
+		"ai_enabled":            "true",
+		"config_retention_days": "30",
 	})
 }
 

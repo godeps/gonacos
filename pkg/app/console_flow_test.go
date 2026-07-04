@@ -14,8 +14,9 @@ func TestConsoleSPAFlowEndToEnd(t *testing.T) {
 	t.Parallel()
 	handler := NewHandler("../..")
 
-	// 1. Serve the console HTML.
-	req := httptest.NewRequest(http.MethodGet, "/v3/console/ui", nil)
+	// 1. Serve the legacy console HTML (React SPA is at /v3/console/ui,
+	//    legacy single-file console is at /v3/console/ui/legacy).
+	req := httptest.NewRequest(http.MethodGet, "/v3/console/ui/legacy", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

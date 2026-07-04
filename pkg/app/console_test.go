@@ -10,7 +10,9 @@ import (
 func TestConsoleUIReachableThroughHandler(t *testing.T) {
 	t.Parallel()
 	handler := NewHandler("../..")
-	req := httptest.NewRequest(http.MethodGet, "/v3/console/ui", nil)
+	// React SPA is now served at /v3/console/ui; legacy single-file console
+	// is preserved at /v3/console/ui/legacy.
+	req := httptest.NewRequest(http.MethodGet, "/v3/console/ui/legacy", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -18,6 +20,23 @@ func TestConsoleUIReachableThroughHandler(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "GoNacos Console") {
 		t.Fatalf("missing console title")
+	}
+}
+
+func TestReactSPAReachableThroughHandler(t *testing.T) {
+	t.Parallel()
+	handler := NewHandler("../..")
+	// React SPA index.html should be served at /v3/console/ui.
+	req := httptest.NewRequest(http.MethodGet, "/v3/console/ui", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	// React SPA mount point.
+	if !strings.Contains(body, `id="root"`) {
+		t.Fatalf("missing React root div: %q", body)
 	}
 }
 

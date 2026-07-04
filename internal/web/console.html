@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoNacos Console</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --panel: #ffffff;
+    --border: #e1e6eb;
+    --text: #1f2933;
+    --muted: #6b7280;
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --danger: #dc2626;
+    --success: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+  }
+  header {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+  header .spacer { flex: 1; }
+  header .user { color: var(--muted); font-size: 13px; }
+  header button { padding: 6px 12px; }
+  nav {
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    gap: 4px;
+  }
+  nav button {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 12px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--muted);
+  }
+  nav button.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+  }
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .panel h2 { margin: 0 0 16px 0; font-size: 16px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; }
+  tr:hover { background: #f9fafb; }
+  input, select, textarea {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  button {
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  button:hover { background: var(--primary-hover); }
+  button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+  button.secondary:hover { background: #f3f4f6; }
+  button.danger { background: var(--danger); }
+  .row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .row label { min-width: 100px; color: var(--muted); }
+  .row input, .row select { flex: 1; min-width: 180px; }
+  .muted { color: var(--muted); }
+  .error { color: var(--danger); padding: 8px 0; }
+  .success { color: var(--success); padding: 8px 0; }
+  .login { max-width: 360px; margin: 80px auto; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; background: #e5e7eb; color: var(--text); }
+  .badge.online { background: #d1fae5; color: var(--success); }
+  .badge.offline { background: #fee2e2; color: var(--danger); }
+  pre { background: #1f2933; color: #f9fafb; padding: 12px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+"use strict";
+
+const API = "";
+let token = localStorage.getItem("gonacos_token") || "";
+let currentUser = localStorage.getItem("gonacos_user") || "";
+
+const state = {
+  view: "namespaces",
+  namespaces: [],
+  configs: [],
+  services: [],
+  users: [],
+  plugins: [],
+  prompts: [],
+  error: "",
+  message: "",
+};
+
+function headers(json) {
+  const h = {};
+  if (token) h["Authorization"] = "Bearer " + token;
+  return h;
+}
+
+async function api(method, path, body) {
+  const opts = { method, headers: headers() };
+  if (body) {
+    if (body instanceof URLSearchParams) {
+      opts.body = body;
+    } else {
+      opts.body = JSON.stringify(body);
+      opts.headers["Content-Type"] = "application/json";
+    }
+  }
+  const res = await fetch(API + path, opts);
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch { data = text; }
+  }
+  if (!res.ok) {
+    const msg = (data && data.message) || res.statusText;
+    throw new Error(msg || "request failed");
+  }
+  return data;
+}
+
+async function apiForm(method, path, form) {
+  const opts = { method, headers: headers(), body: form };
+  const res = await fetch(API + path, opts);
+  const text = await res.text();
+  let data = null;
+  if (text) {
+    try { data = JSON.parse(text); } catch { data = text; }
+  }
+  if (!res.ok) {
+    const msg = (data && data.message) || res.statusText;
+    throw new Error(msg || "request failed");
+  }
+  return data;
+}
+
+function render() {
+  const app = document.getElementById("app");
+  if (!token) {
+    app.innerHTML = loginHTML();
+    attachLogin();
+    return;
+  }
+  app.innerHTML = `
+    <header>
+      <h1>GoNacos Console</h1>
+      <span class="spacer"></span>
+      <span class="user">Signed in as <strong>${currentUser}</strong></span>
+      <button class="secondary" id="logout">Logout</button>
+    </header>
+    <nav>
+      ${tabHTML("namespaces", "Namespaces")}
+      ${tabHTML("configs", "Configs")}
+      ${tabHTML("services", "Services")}
+      ${tabHTML("users", "Users")}
+      ${tabHTML("plugins", "Plugins")}
+      ${tabHTML("ai", "AI Registry")}
+      ${tabHTML("ops", "Ops")}
+    </nav>
+    <main>
+      ${state.error ? `<div class="error">${state.error}</div>` : ""}
+      ${state.message ? `<div class="success">${state.message}</div>` : ""}
+      ${viewHTML()}
+    </main>
+  `;
+  document.getElementById("logout").onclick = () => {
+    token = "";
+    currentUser = "";
+    localStorage.removeItem("gonacos_token");
+    localStorage.removeItem("gonacos_user");
+    render();
+  };
+  attachViewHandlers();
+}
+
+function tabHTML(id, label) {
+  return `<button class="${state.view === id ? "active" : ""}" data-tab="${id}">${label}</button>`;
+}
+
+function viewHTML() {
+  switch (state.view) {
+    case "namespaces": return namespacesHTML();
+    case "configs": return configsHTML();
+    case "services": return servicesHTML();
+    case "users": return usersHTML();
+    case "plugins": return pluginsHTML();
+    case "ai": return aiHTML();
+    case "ops": return opsHTML();
+    default: return "";
+  }
+}
+
+function loginHTML() {
+  return `
+    <div class="login panel">
+      <h2>Sign in</h2>
+      <p class="muted">Default credentials: nacos / nacos</p>
+      <div class="row"><label>Username</label><input id="loginUser" value="nacos"></div>
+      <div class="row"><label>Password</label><input id="loginPass" type="password" value="nacos"></div>
+      <div class="row"><button id="loginBtn">Sign in</button></div>
+      <div id="loginError"></div>
+    </div>
+  `;
+}
+
+function attachLogin() {
+  const btn = document.getElementById("loginBtn");
+  if (!btn) return;
+  btn.onclick = async () => {
+    const user = document.getElementById("loginUser").value;
+    const pass = document.getElementById("loginPass").value;
+    const form = new URLSearchParams();
+    form.set("username", user);
+    form.set("password", pass);
+    try {
+      const data = await apiForm("POST", "/v3/auth/user/login", form);
+      token = data.data.accessToken;
+      currentUser = data.data.username;
+      localStorage.setItem("gonacos_token", token);
+      localStorage.setItem("gonacos_user", currentUser);
+      await loadAll();
+      render();
+    } catch (e) {
+      // First-start fallback: bootstrap the default admin then retry.
+      if (user === "nacos" && pass === "nacos") {
+        try {
+          const bootForm = new URLSearchParams();
+          bootForm.set("password", "nacos");
+          await apiForm("POST", "/v3/auth/user/admin", bootForm);
+          const retryData = await apiForm("POST", "/v3/auth/user/login", form);
+          token = retryData.data.accessToken;
+          currentUser = retryData.data.username;
+          localStorage.setItem("gonacos_token", token);
+          localStorage.setItem("gonacos_user", currentUser);
+          await loadAll();
+          render();
+          return;
+        } catch (e2) {
+          document.getElementById("loginError").innerHTML = `<div class="error">${e2.message}</div>`;
+          return;
+        }
+      }
+      document.getElementById("loginError").innerHTML = `<div class="error">${e.message}</div>`;
+    }
+  };
+}
+
+async function loadAll() {
+  await Promise.all([
+    loadNamespaces(),
+    loadServices(),
+    loadPlugins(),
+    loadPrompts(),
+  ]);
+}
+
+async function loadNamespaces() {
+  try {
+    const data = await api("GET", "/v3/admin/core/namespace/list");
+    state.namespaces = data.data || [];
+  } catch (e) { state.error = e.message; }
+}
+
+function namespacesHTML() {
+  const rows = state.namespaces.map(n => `
+    <tr>
+      <td>${n.namespace}</td>
+      <td>${n.namespaceShowName}</td>
+      <td>${n.namespaceDesc || ""}</td>
+      <td>${n.configCount}</td>
+      <td>${n.namespace !== "public" ? `<button class="danger" data-del-ns="${n.namespace}">Delete</button>` : `<span class="badge">system</span>`}</td>
+    </tr>
+  `).join("");
+  return `
+    <div class="panel">
+      <h2>Namespaces</h2>
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>Description</th><th>Configs</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Create namespace</h2>
+      <div class="row"><label>ID</label><input id="nsId"></div>
+      <div class="row"><label>Name</label><input id="nsName"></div>
+      <div class="row"><label>Description</label><input id="nsDesc"></div>
+      <div class="row"><button id="nsCreate">Create</button></div>
+    </div>
+  `;
+}
+
+async function loadConfigs(namespaceID) {
+  const ns = namespaceID || "public";
+  try {
+    const data = await api("GET", `/v3/admin/cs/config/list?namespaceId=${ns}&pageNo=1&pageSize=50`);
+    state.configs = data.data?.pageItems || [];
+  } catch (e) { state.error = e.message; }
+}
+
+function configsHTML() {
+  const nsOptions = state.namespaces.map(n => `<option value="${n.namespace}">${n.namespaceShowName}</option>`).join("");
+  const rows = state.configs.map(c => `
+    <tr>
+      <td>${c.dataId}</td>
+      <td>${c.group}</td>
+      <td>${c.type || ""}</td>
+      <td>${c.md5 ? c.md5.slice(0,8) : ""}</td>
+    </tr>
+  `).join("");
+  return `
+    <div class="panel">
+      <h2>Configs</h2>
+      <div class="row">
+        <select id="cfgNs">${nsOptions}</select>
+        <button class="secondary" id="cfgRefresh">Refresh</button>
+      </div>
+      <table>
+        <thead><tr><th>Data ID</th><th>Group</th><th>Type</th><th>MD5</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Publish config</h2>
+      <div class="row"><label>Namespace</label><select id="pubNs">${nsOptions}</select></div>
+      <div class="row"><label>Group</label><input id="pubGroup" value="DEFAULT_GROUP"></div>
+      <div class="row"><label>Data ID</label><input id="pubDataId"></div>
+      <div class="row"><label>Type</label><input id="pubType" value="text"></div>
+      <div class="row"><label>Content</label><textarea id="pubContent" rows="6" style="width:100%"></textarea></div>
+      <div class="row"><button id="pubBtn">Publish</button></div>
+    </div>
+  `;
+}
+
+async function loadServices() {
+  try {
+    const data = await api("GET", "/v3/admin/ns/service/list?namespaceId=public&pageNo=1&pageSize=50");
+    state.services = data.data?.serviceList || [];
+  } catch (e) { state.error = e.message; }
+}
+
+function servicesHTML() {
+  const rows = state.services.map(s => `
+    <tr>
+      <td>${s.name}</td>
+      <td>${s.groupName}</td>
+      <td>${s.instanceCount}</td>
+      <td>${s.healthyInstanceCount}</td>
+      <td><span class="badge ${s.ephemeral ? "online" : ""}">${s.ephemeral ? "ephemeral" : "persistent"}</span></td>
+    </tr>
+  `).join("");
+  return `
+    <div class="panel">
+      <h2>Services</h2>
+      <div class="row"><button class="secondary" id="svcRefresh">Refresh</button></div>
+      <table>
+        <thead><tr><th>Name</th><th>Group</th><th>Instances</th><th>Healthy</th><th>Type</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadUsers() {
+  try {
+    const data = await api("GET", "/v3/auth/user/list?pageNo=1&pageSize=50");
+    state.users = data.data?.pageItems || [];
+  } catch (e) { state.error = e.message; }
+}
+
+function usersHTML() {
+  const rows = state.users.map(u => `
+    <tr>
+      <td>${u.username}</td>
+      <td>${u.globalAdmin ? '<span class="badge online">admin</span>' : ""}</td>
+      <td>${u.enabled ? "enabled" : "disabled"}</td>
+    </tr>
+  `).join("");
+  return `
+    <div class="panel">
+      <h2>Users</h2>
+      <div class="row"><button class="secondary" id="userRefresh">Refresh</button></div>
+      <table>
+        <thead><tr><th>Username</th><th>Role</th><th>Status</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Create user</h2>
+      <div class="row"><label>Username</label><input id="newUser"></div>
+      <div class="row"><label>Password</label><input id="newPass" type="password"></div>
+      <div class="row"><button id="userCreate">Create</button></div>
+    </div>
+  `;
+}
+
+async function loadPlugins() {
+  try {
+    const data = await api("GET", "/v3/admin/core/plugin/list");
+    state.plugins = data.data || [];
+  } catch (e) { state.error = e.message; }
+}
+
+function pluginsHTML() {
+  const rows = state.plugins.map(p => `
+    <tr>
+      <td>${p.name}</td>
+      <td>${p.id}</td>
+      <td><span class="badge ${p.enabled ? "online" : "offline"}">${p.enabled ? "enabled" : "disabled"}</span></td>
+      <td>${p.available ? "available" : "unavailable"}</td>
+    </tr>
+  `).join("");
+  return `
+    <div class="panel">
+      <h2>Plugins</h2>
+      <table>
+        <thead><tr><th>Name</th><th>ID</th><th>Status</th><th>Available</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadPrompts() {
+  try {
+    const data = await api("GET", "/v3/admin/ai/prompt/list");
+    state.prompts = data.data || [];
+  } catch (e) { state.error = e.message; }
+}
+
+function aiHTML() {
+  const rows = state.prompts.map(p => `
+    <tr>
+      <td>${p.id}</td>
+      <td>${p.name}</td>
+      <td><span class="badge ${p.state === "ONLINE" ? "online" : ""}">${p.state}</span></td>
+      <td>${p.currentVersion || ""}</td>
+    </tr>
+  `).join("");
+  return `
+    <div class="panel">
+      <h2>AI Prompts</h2>
+      <div class="row"><button class="secondary" id="aiRefresh">Refresh</button></div>
+      <table>
+        <thead><tr><th>ID</th><th>Name</th><th>State</th><th>Version</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function opsHTML() {
+  return `
+    <div class="panel">
+      <h2>Operations</h2>
+      <p class="muted">Backup captures all in-memory state as JSON. Restore replaces current state.</p>
+      <div class="row">
+        <button id="backupBtn">Download backup</button>
+        <button id="metricsBtn">View metrics</button>
+        <button id="infoBtn">Process info</button>
+      </div>
+      <pre id="opsOutput"></pre>
+    </div>
+    <div class="panel">
+      <h2>Restore from backup</h2>
+      <div class="row"><input type="file" id="restoreFile" accept="application/json"></div>
+      <div class="row"><button id="restoreBtn">Restore</button></div>
+    </div>
+  `;
+}
+
+async function attachViewHandlers() {
+  document.querySelectorAll("nav button[data-tab]").forEach(btn => {
+    btn.onclick = () => {
+      state.view = btn.dataset.tab;
+      state.error = "";
+      state.message = "";
+      if (state.view === "users") loadUsers().then(render);
+      if (state.view === "configs") loadConfigs().then(render);
+      render();
+    };
+  });
+
+  document.querySelectorAll("[data-del-ns]").forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await api("DELETE", `/v3/admin/core/namespace?namespaceId=${btn.dataset.delNs}`);
+        await loadNamespaces();
+        render();
+      } catch (e) { state.error = e.message; render(); }
+    };
+  });
+
+  const nsCreate = document.getElementById("nsCreate");
+  if (nsCreate) {
+    nsCreate.onclick = async () => {
+      const form = new URLSearchParams();
+      form.set("namespaceId", document.getElementById("nsId").value);
+      form.set("namespaceName", document.getElementById("nsName").value);
+      form.set("namespaceDesc", document.getElementById("nsDesc").value);
+      try {
+        await apiForm("POST", "/v3/admin/core/namespace", form);
+        state.message = "namespace created";
+        await loadNamespaces();
+        render();
+      } catch (e) { state.error = e.message; render(); }
+    };
+  }
+
+  const cfgRefresh = document.getElementById("cfgRefresh");
+  if (cfgRefresh) {
+    cfgRefresh.onclick = async () => {
+      const ns = document.getElementById("cfgNs").value;
+      await loadConfigs(ns);
+      render();
+    };
+  }
+
+  const pubBtn = document.getElementById("pubBtn");
+  if (pubBtn) {
+    pubBtn.onclick = async () => {
+      const form = new URLSearchParams();
+      form.set("namespaceId", document.getElementById("pubNs").value);
+      form.set("groupName", document.getElementById("pubGroup").value);
+      form.set("dataId", document.getElementById("pubDataId").value);
+      form.set("type", document.getElementById("pubType").value);
+      form.set("content", document.getElementById("pubContent").value);
+      try {
+        await apiForm("POST", "/v3/admin/cs/config", form);
+        state.message = "config published";
+        await loadConfigs(document.getElementById("pubNs").value);
+        render();
+      } catch (e) { state.error = e.message; render(); }
+    };
+  }
+
+  const svcRefresh = document.getElementById("svcRefresh");
+  if (svcRefresh) {
+    svcRefresh.onclick = async () => {
+      await loadServices();
+      render();
+    };
+  }
+
+  const userRefresh = document.getElementById("userRefresh");
+  if (userRefresh) {
+    userRefresh.onclick = async () => {
+      await loadUsers();
+      render();
+    };
+  }
+
+  const userCreate = document.getElementById("userCreate");
+  if (userCreate) {
+    userCreate.onclick = async () => {
+      const form = new URLSearchParams();
+      form.set("username", document.getElementById("newUser").value);
+      form.set("password", document.getElementById("newPass").value);
+      try {
+        await apiForm("POST", "/v3/auth/user", form);
+        state.message = "user created";
+        await loadUsers();
+        render();
+      } catch (e) { state.error = e.message; render(); }
+    };
+  }
+
+  const aiRefresh = document.getElementById("aiRefresh");
+  if (aiRefresh) {
+    aiRefresh.onclick = async () => {
+      await loadPrompts();
+      render();
+    };
+  }
+
+  const backupBtn = document.getElementById("backupBtn");
+  if (backupBtn) {
+    backupBtn.onclick = async () => {
+      const res = await fetch(API + "/v3/admin/ops/backup", { headers: headers() });
+      const text = await res.text();
+      document.getElementById("opsOutput").textContent = text;
+    };
+  }
+
+  const metricsBtn = document.getElementById("metricsBtn");
+  if (metricsBtn) {
+    metricsBtn.onclick = async () => {
+      const res = await fetch(API + "/v3/admin/ops/metrics", { headers: headers() });
+      const text = await res.text();
+      document.getElementById("opsOutput").textContent = text;
+    };
+  }
+
+  const infoBtn = document.getElementById("infoBtn");
+  if (infoBtn) {
+    infoBtn.onclick = async () => {
+      try {
+        const data = await api("GET", "/v3/admin/ops/info");
+        document.getElementById("opsOutput").textContent = JSON.stringify(data.data, null, 2);
+      } catch (e) { state.error = e.message; render(); }
+    };
+  }
+
+  const restoreBtn = document.getElementById("restoreBtn");
+  if (restoreBtn) {
+    restoreBtn.onclick = async () => {
+      const fileInput = document.getElementById("restoreFile");
+      if (!fileInput.files.length) {
+        state.error = "select a backup file first";
+        render();
+        return;
+      }
+      const text = await fileInput.files[0].text();
+      try {
+        const res = await fetch(API + "/v3/admin/ops/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers() },
+          body: text,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "restore failed");
+        state.message = "restored " + (data.data?.services || []).join(", ");
+        await loadAll();
+        render();
+      } catch (e) { state.error = e.message; render(); }
+    };
+  }
+}
+
+render();
+</script>
+</body>
+</html>

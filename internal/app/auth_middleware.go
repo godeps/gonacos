@@ -1,0 +1,153 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+
+	authsvc "github.com/saker-ai/gonacos/internal/auth"
+	"github.com/saker-ai/gonacos/internal/protocol"
+)
+
+type claimsKey struct{}
+
+// ClaimsFromContext returns the verified claims injected by authMiddleware,
+// or a zero Claims value when no token was presented.
+func ClaimsFromContext(ctx context.Context) authsvc.Claims {
+	if v, ok := ctx.Value(claimsKey{}).(authsvc.Claims); ok {
+		return v
+	}
+	return authsvc.Claims{}
+}
+
+// authMiddleware verifies access tokens and enforces admin-only routes.
+//
+// Design (permissive for SDK compatibility):
+//   - Open paths (health, login, bootstrap, UI) skip verification entirely.
+//   - Admin-only paths (user/role/permission CRUD) require a valid admin token.
+//   - All other paths: a missing token is allowed (anonymous), a presented
+//     token is verified and rejected if invalid or expired.
+//
+// The SDK sends accessToken as a query parameter (GET) or form parameter
+// (POST), not as an Authorization header, so the middleware checks all three
+// sources in order: Authorization header → accessToken query → accessToken
+// form.
+type authMiddleware struct {
+	auth *authsvc.Service
+	next http.Handler
+}
+
+func newAuthMiddleware(auth *authsvc.Service, next http.Handler) http.Handler {
+	return &authMiddleware{auth: auth, next: next}
+}
+
+// openPaths bypass auth entirely. Login and bootstrap must work without a
+// token; health/state/UI are public.
+var authMiddlewareOpenPaths = map[string]struct{}{
+	"/v3/console/health/liveness":     {},
+	"/v3/console/health/readiness":    {},
+	"/v3/admin/core/state/liveness":   {},
+	"/v3/admin/core/state/readiness":  {},
+	"/v3/admin/core/state":            {},
+	"/v3/console/server/state":        {},
+	"/v3/console/server/announcement": {},
+	"/v3/console/server/guide":        {},
+	"/v3/auth/user/login":             {},
+	"/v3/auth/user/admin":             {},
+}
+
+// adminOnlyExactPaths require a valid globalAdmin token. Exact match so that
+// "/v3/auth/user" does not match "/v3/auth/user/login".
+var adminOnlyExactPaths = map[string]struct{}{
+	"/v3/auth/user":           {},
+	"/v3/auth/user/list":      {},
+	"/v3/auth/user/search":    {},
+	"/v3/auth/role":           {},
+	"/v3/auth/role/list":      {},
+	"/v3/auth/role/search":    {},
+	"/v3/auth/permission":     {},
+	"/v3/auth/permission/list": {},
+	"/v3/auth/permission/has": {},
+}
+
+func (m *authMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/nacos")
+
+	if isAuthMiddlewareOpenPath(path) || strings.HasPrefix(path, "/v3/console/ui") {
+		m.next.ServeHTTP(w, r)
+		return
+	}
+
+	token := extractAccessToken(r)
+	var claims authsvc.Claims
+	if token != "" {
+		c, err := m.auth.VerifyToken(token)
+		if err != nil {
+			writeAuthMiddlewareError(w, err)
+			return
+		}
+		claims = c
+		r = r.WithContext(context.WithValue(r.Context(), claimsKey{}, claims))
+	}
+
+	if _, exact := adminOnlyExactPaths[path]; exact {
+		if token == "" {
+			writeAuthMiddlewareError(w, authsvc.ErrInvalidToken)
+			return
+		}
+		if !claims.GlobalAdmin {
+			writeAuthMiddlewareError(w, authsvc.ErrAccessDenied)
+			return
+		}
+	}
+
+	m.next.ServeHTTP(w, r)
+}
+
+// extractAccessToken pulls the access token from the Authorization header
+// (console/direct REST), the accessToken query parameter (SDK GET), or the
+// accessToken form parameter (SDK POST/PUT/DELETE). Returns "" if absent.
+func extractAccessToken(r *http.Request) string {
+	if h := r.Header.Get(authsvc.AuthorizationHeader); h != "" {
+		if t := authsvc.ParseAuthorization(h); t != "" {
+			return t
+		}
+	}
+	if t := r.URL.Query().Get("accessToken"); t != "" {
+		return t
+	}
+	if r.Method != http.MethodGet {
+		ct := r.Header.Get("Content-Type")
+		if strings.HasPrefix(ct, "application/x-www-form-urlencoded") {
+			if err := r.ParseForm(); err == nil {
+				if t := r.PostForm.Get("accessToken"); t != "" {
+					return t
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func isAuthMiddlewareOpenPath(path string) bool {
+	_, ok := authMiddlewareOpenPaths[path]
+	return ok
+}
+
+func writeAuthMiddlewareError(w http.ResponseWriter, err error) {
+	status := http.StatusUnauthorized
+	code := protocol.CodeAccessDenied
+	switch {
+	case errors.Is(err, authsvc.ErrExpiredToken):
+		code = protocol.CodeAccessDenied
+	case errors.Is(err, authsvc.ErrInvalidToken):
+		code = protocol.CodeAccessDenied
+	case errors.Is(err, authsvc.ErrAccessDenied):
+		status = http.StatusForbidden
+	}
+	protocol.WriteError(w, status, protocol.Error{
+		Code:    code,
+		Message: err.Error(),
+	})
+}

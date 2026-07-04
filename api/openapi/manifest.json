@@ -1,0 +1,2947 @@
+{
+  "generatedBy": "gonacos-contract",
+  "openapi": [
+    {
+      "name": "admin",
+      "file": "api/openapi/upstream/admin.zh.json",
+      "title": "Nacos 运维 API",
+      "version": "3.2.2",
+      "openapi": "3.1.0",
+      "sha256": "37da1a13e8ecd7f9a8da3798ce223d2217e53aa9c67dbacac243ae6ea87ebd7c",
+      "operations": [
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ai/a2a",
+          "operationId": "deleteAgent",
+          "tags": [
+            "Nacos AI A2A 相关API"
+          ],
+          "summary": "删除AgentCard"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/a2a",
+          "operationId": "getAgentCard",
+          "tags": [
+            "Nacos AI A2A 相关API"
+          ],
+          "summary": "查询AgentCard的详情"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/a2a",
+          "operationId": "registerAgent",
+          "tags": [
+            "Nacos AI A2A 相关API"
+          ],
+          "summary": "创建AgentCard"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/a2a",
+          "operationId": "updateAgentCard",
+          "tags": [
+            "Nacos AI A2A 相关API"
+          ],
+          "summary": "更新AgentCard"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/a2a/list",
+          "operationId": "listAgents",
+          "tags": [
+            "Nacos AI A2A 相关API"
+          ],
+          "summary": "查询AgentCard的列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/a2a/version/list",
+          "operationId": "listAgentVersions",
+          "tags": [
+            "Nacos AI A2A 相关API"
+          ],
+          "summary": "查询指定AgentCard的版本列表"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ai/agentspecs",
+          "operationId": "deleteAgentSpec",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "删除 AgentSpec"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/agentspecs",
+          "operationId": "getAgentSpec",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "查询 AgentSpec"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/agentspecs/biz-tags",
+          "operationId": "updateBizTags_2",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "更新 AgentSpec 业务标签"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ai/agentspecs/draft",
+          "operationId": "deleteDraft_2",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "删除 AgentSpec 草稿版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/agentspecs/draft",
+          "operationId": "createDraft_2",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "创建 AgentSpec 草稿版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/agentspecs/draft",
+          "operationId": "updateDraft_2",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "更新 AgentSpec 草稿内容"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/agentspecs/force-publish",
+          "operationId": "forcePublish_2",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "强制发布 AgentSpec 版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/agentspecs/labels",
+          "operationId": "updateLabels_2",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "更新 AgentSpec 版本标签"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/agentspecs/list",
+          "operationId": "listAgentSpecs",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "查询 AgentSpec 列表"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/agentspecs/offline",
+          "operationId": "offline_2",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "下线 AgentSpec"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/agentspecs/online",
+          "operationId": "online_2",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "上线 AgentSpec"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/agentspecs/publish",
+          "operationId": "publish_2",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "发布 AgentSpec 版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/agentspecs/redraft",
+          "operationId": "redraft_2",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "重新编辑 AgentSpec 版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/agentspecs/scope",
+          "operationId": "updateScope_1",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "更新 AgentSpec 可见范围"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/agentspecs/submit",
+          "operationId": "submit_2",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "提交 AgentSpec 版本审核"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/agentspecs/upload",
+          "operationId": "uploadAgentSpec",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "上传 AgentSpec"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/agentspecs/version",
+          "operationId": "getAgentSpecVersion",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "查询 AgentSpec 版本"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/agentspecs/version/meta",
+          "operationId": "getAgentSpecVersionMeta",
+          "tags": [
+            "Nacos AI AgentSpec 管理 API"
+          ],
+          "summary": "查询 AgentSpec 版本元数据"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/import/execute",
+          "operationId": "execute",
+          "tags": [
+            "Nacos AI 资源导入 API"
+          ],
+          "summary": "执行 AI 资源导入"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/import/search",
+          "operationId": "search",
+          "tags": [
+            "Nacos AI 资源导入 API"
+          ],
+          "summary": "搜索外部 AI 资源"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/import/sources",
+          "operationId": "listSources",
+          "tags": [
+            "Nacos AI 资源导入 API"
+          ],
+          "summary": "查询 AI 资源导入源"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/import/validate",
+          "operationId": "validate",
+          "tags": [
+            "Nacos AI 资源导入 API"
+          ],
+          "summary": "校验 AI 资源导入项"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ai/mcp",
+          "operationId": "deleteMcpServer",
+          "tags": [
+            "Nacos AI MCP服务相关API"
+          ],
+          "summary": "删除MCP服务"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/mcp",
+          "operationId": "getMcpServer",
+          "tags": [
+            "Nacos AI MCP服务相关API"
+          ],
+          "summary": "查询MCP服务的详情"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/mcp",
+          "operationId": "createMcpServer",
+          "tags": [
+            "Nacos AI MCP服务相关API"
+          ],
+          "summary": "创建MCP服务"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/mcp",
+          "operationId": "updateMcpServer",
+          "tags": [
+            "Nacos AI MCP服务相关API"
+          ],
+          "summary": "更新MCP服务"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/mcp/list",
+          "operationId": "listMcpServers",
+          "tags": [
+            "Nacos AI MCP服务相关API"
+          ],
+          "summary": "查询MCP服务的服务列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/pipelines",
+          "operationId": "listPipelinesLegacy",
+          "tags": [
+            "Nacos AI Pipeline 管理 API"
+          ],
+          "summary": "查询 Pipeline 执行记录列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/pipelines/detail",
+          "operationId": "getPipelineDetail",
+          "tags": [
+            "Nacos AI Pipeline 管理 API"
+          ],
+          "summary": "查询 Pipeline 执行记录"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/pipelines/list",
+          "operationId": "listPipelines",
+          "tags": [
+            "Nacos AI Pipeline 管理 API"
+          ],
+          "summary": "查询 Pipeline 执行记录列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/pipelines/{pipelineId}",
+          "operationId": "getPipeline",
+          "tags": [
+            "Nacos AI Pipeline 管理 API"
+          ],
+          "summary": "查询 Pipeline 执行记录"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ai/prompt",
+          "operationId": "deletePrompt",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "删除 Prompt"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/prompt",
+          "operationId": "publishPrompt",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "发布 Prompt"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/prompt/biz-tags",
+          "operationId": "updateBizTags_1",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "更新 Prompt 业务标签"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/prompt/description",
+          "operationId": "updateDescription",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "更新 Prompt 描述"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/prompt/detail",
+          "operationId": "queryPromptDetail",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "查询 Prompt 详情"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ai/prompt/draft",
+          "operationId": "deleteDraft_1",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "删除 Prompt 草稿"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/prompt/draft",
+          "operationId": "createDraft_1",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "创建 Prompt 草稿"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/prompt/draft",
+          "operationId": "updateDraft_1",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "更新 Prompt 草稿"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/prompt/force-publish",
+          "operationId": "forcePublish_1",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "强制发布 Prompt 版本"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/prompt/governance",
+          "operationId": "getPromptGovernanceDetail",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "查询 Prompt 治理详情"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ai/prompt/label",
+          "operationId": "unbindLabel",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "解绑标签"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/prompt/label",
+          "operationId": "bindLabel",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "绑定标签"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/prompt/labels",
+          "operationId": "updateLabels_1",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "更新 Prompt 标签"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/prompt/list",
+          "operationId": "listPrompts",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "查询 Prompt 列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/prompt/metadata",
+          "operationId": "getPromptMetadata",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "查询 Prompt 元数据"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/prompt/metadata",
+          "operationId": "updatePromptMetadata",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "更新 Prompt 元数据"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/prompt/offline",
+          "operationId": "offline_1",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "下线 Prompt 版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/prompt/online",
+          "operationId": "online_1",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "上线 Prompt 版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/prompt/publish",
+          "operationId": "publish_1",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "发布 Prompt 版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/prompt/redraft",
+          "operationId": "redraft_1",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "重新编辑 Prompt 版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/prompt/submit",
+          "operationId": "submit_1",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "提交 Prompt 版本"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/prompt/version",
+          "operationId": "getVersionDetail",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "查询 Prompt 版本详情"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/prompt/version/download",
+          "operationId": "downloadPromptVersion",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "下载 Prompt 版本"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/prompt/versions",
+          "operationId": "listPromptVersions",
+          "tags": [
+            "Nacos AI Prompt 管理相关 API"
+          ],
+          "summary": "查询 Prompt 版本列表"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ai/skills",
+          "operationId": "deleteSkill",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "删除技能"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/skills",
+          "operationId": "getSkill",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "获取技能详情"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/skills/biz-tags",
+          "operationId": "updateBizTags",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "更新技能业务标签"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ai/skills/draft",
+          "operationId": "deleteDraft",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "删除技能草稿版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/skills/draft",
+          "operationId": "createDraft",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "创建技能草稿版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/skills/draft",
+          "operationId": "updateDraft",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "更新技能草稿内容"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/skills/force-publish",
+          "operationId": "forcePublish",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "强制发布 Skill 版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/skills/labels",
+          "operationId": "updateLabels",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "更新技能版本标签"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/skills/list",
+          "operationId": "listSkills",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "查询技能列表"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/skills/offline",
+          "operationId": "offline",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "下线技能"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/skills/online",
+          "operationId": "online",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "上线技能"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/skills/publish",
+          "operationId": "publish",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "发布技能版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/skills/redraft",
+          "operationId": "redraft",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "重新编辑 Skill 版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ai/skills/scope",
+          "operationId": "updateScope",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "更新技能可见范围"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/skills/submit",
+          "operationId": "submit",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "提交技能版本审核"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/skills/upload",
+          "operationId": "uploadSkill",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "从 ZIP 文件上传技能"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ai/skills/upload/batch",
+          "operationId": "batchUploadSkills",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "批量上传 Skill"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/skills/version",
+          "operationId": "getSkillVersion",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "查询技能版本详情"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ai/skills/version/download",
+          "operationId": "downloadSkillVersion",
+          "tags": [
+            "Nacos AI Skill 相关 API"
+          ],
+          "summary": "下载技能版本 ZIP 包"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/core/cluster/lookup",
+          "operationId": "updateLookup",
+          "tags": [
+            "Nacos引擎集群相关API"
+          ],
+          "summary": "更新Nacos集群的地址发现模式"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/cluster/node/list",
+          "operationId": "listNodes",
+          "tags": [
+            "Nacos引擎集群相关API"
+          ],
+          "summary": "获取Nacos节点列表运行信息"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/core/cluster/node/list",
+          "operationId": "updateNodes",
+          "tags": [
+            "Nacos引擎集群相关API"
+          ],
+          "summary": "更新Nacos节点信息"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/cluster/node/self",
+          "operationId": "self",
+          "tags": [
+            "Nacos引擎集群相关API"
+          ],
+          "summary": "获取当前Nacos节点运行信息"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/loader/cluster",
+          "operationId": "loaderMetrics",
+          "tags": [
+            "Nacos引擎连接负载相关API"
+          ],
+          "summary": "查询集群连接概览信息"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/loader/current",
+          "operationId": "currentClients",
+          "tags": [
+            "Nacos引擎连接负载相关API"
+          ],
+          "summary": "查询当前节点连接列表"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/core/loader/reloadClient",
+          "operationId": "reloadSingle",
+          "tags": [
+            "Nacos引擎连接负载相关API"
+          ],
+          "summary": "均衡指定的单个连接"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/core/loader/reloadCurrent",
+          "operationId": "reloadCount",
+          "tags": [
+            "Nacos引擎连接负载相关API"
+          ],
+          "summary": "均衡指定数量的连接"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/core/loader/smartReloadCluster",
+          "operationId": "smartReload",
+          "tags": [
+            "Nacos引擎连接负载相关API"
+          ],
+          "summary": "自动均衡集群中的连接"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/core/namespace",
+          "operationId": "deleteNamespace",
+          "tags": [
+            "Nacos集群命名空间相关API"
+          ],
+          "summary": "删除命名空间"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/namespace",
+          "operationId": "getNamespace",
+          "tags": [
+            "Nacos集群命名空间相关API"
+          ],
+          "summary": "获取命名空间详情"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/core/namespace",
+          "operationId": "createNamespace",
+          "tags": [
+            "Nacos集群命名空间相关API"
+          ],
+          "summary": "创建新命名空间"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/core/namespace",
+          "operationId": "updateNamespace",
+          "tags": [
+            "Nacos集群命名空间相关API"
+          ],
+          "summary": "更新命名空间"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/namespace/check",
+          "operationId": "checkNamespaceIdExist",
+          "tags": [
+            "Nacos集群命名空间相关API"
+          ],
+          "summary": "检查命名空间是否存在"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/namespace/list",
+          "operationId": "getNamespaceList",
+          "tags": [
+            "Nacos集群命名空间相关API"
+          ],
+          "summary": "获取Nacos命名空间列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/ops/ids",
+          "operationId": "ids",
+          "tags": [
+            "Nacos引擎核心运维操作相关API"
+          ],
+          "summary": "获取ID生成器信息"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/core/ops/log",
+          "operationId": "updateLog",
+          "tags": [
+            "Nacos引擎核心运维操作相关API"
+          ],
+          "summary": "动态修改Nacos Core相关日志级别"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/core/ops/raft",
+          "operationId": "raftOps",
+          "tags": [
+            "Nacos引擎核心运维操作相关API"
+          ],
+          "summary": "Raft 相关操作"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/core/plugin/config",
+          "operationId": "updatePluginConfig",
+          "tags": [
+            "Nacos插件管理API"
+          ],
+          "summary": "更新插件配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/plugin/detail",
+          "operationId": "getPluginDetail",
+          "tags": [
+            "Nacos插件管理API"
+          ],
+          "summary": "获取插件详情"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/plugin/list",
+          "operationId": "getPluginList",
+          "tags": [
+            "Nacos插件管理API"
+          ],
+          "summary": "获取插件列表"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/core/plugin/status",
+          "operationId": "updatePluginStatus",
+          "tags": [
+            "Nacos插件管理API"
+          ],
+          "summary": "启用或禁用插件"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/state",
+          "operationId": "serverState",
+          "tags": [
+            "Nacos引擎状态相关API"
+          ],
+          "summary": "获取Nacos集群状态信息"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/state/liveness",
+          "operationId": "liveness",
+          "tags": [
+            "Nacos引擎状态相关API"
+          ],
+          "summary": "获取Nacos集群的存活状态"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/core/state/readiness",
+          "operationId": "readiness",
+          "tags": [
+            "Nacos引擎状态相关API"
+          ],
+          "summary": "获取Nacos集群的可读状态"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/capacity",
+          "operationId": "getCapacity",
+          "tags": [
+            "Nacos配置容量相关API"
+          ],
+          "summary": "查询容量信息"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/cs/capacity",
+          "operationId": "updateCapacity",
+          "tags": [
+            "Nacos配置容量相关API"
+          ],
+          "summary": "更新容量信息"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/cs/config",
+          "operationId": "deleteConfig",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "删除配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/config",
+          "operationId": "getConfig",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "获取配置详情"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/cs/config",
+          "operationId": "publishConfig",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "发布配置"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/cs/config/batch",
+          "operationId": "deleteConfigs",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "批量删除配置"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/cs/config/beta",
+          "operationId": "stopBeta",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "停止配置BETA发布"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/config/beta",
+          "operationId": "queryBeta",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "查询配置Beta发布状态"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/cs/config/clone",
+          "operationId": "cloneConfig",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "克隆配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/config/export",
+          "operationId": "exportConfig",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "导出配置"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/cs/config/gray",
+          "operationId": "stopGray",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "删除灰度配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/config/gray",
+          "operationId": "queryGray",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "查询灰度配置"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/cs/config/gray",
+          "operationId": "publishGray",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "发布灰度配置"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/cs/config/import",
+          "operationId": "importAndPublishConfig",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "导入配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/config/list",
+          "operationId": "list_2",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "查询配置列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/config/listener",
+          "operationId": "getListeners",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "查询配置的监听者列表"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/cs/config/metadata",
+          "operationId": "publishConfigMetadata",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "更新配置元数据"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/history",
+          "operationId": "getConfigHistoryInfo",
+          "tags": [
+            "Nacos配置历史相关API"
+          ],
+          "summary": "查询配置的某次历史变更记录"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/history/configs",
+          "operationId": "getConfigsByNamespace",
+          "tags": [
+            "Nacos配置历史相关API"
+          ],
+          "summary": "查询命名空间下的配置列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/history/list",
+          "operationId": "listConfigHistory",
+          "tags": [
+            "Nacos配置历史相关API"
+          ],
+          "summary": "查询配置发布历史"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/history/previous",
+          "operationId": "getPreviousConfigHistoryInfo",
+          "tags": [
+            "Nacos配置历史相关API"
+          ],
+          "summary": "查询配置最新状态的前一次变更历史"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/listener",
+          "operationId": "getAllSubClientConfigByIp",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "查询某个订阅者IP订阅了哪些配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/metrics/cluster",
+          "operationId": "metric",
+          "tags": [
+            "Nacos配置中心客户端监控相关API"
+          ],
+          "summary": "获取集群客户端指标"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/metrics/ip",
+          "operationId": "getClientMetrics",
+          "tags": [
+            "Nacos配置中心客户端监控相关API"
+          ],
+          "summary": "获取本地客户端指标"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/cs/ops/derby",
+          "operationId": "derbyOps",
+          "tags": [
+            "Nacos配置中心运维相关API"
+          ],
+          "summary": "执行Derby数据库操作"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/cs/ops/derby/import",
+          "operationId": "importDerby",
+          "tags": [
+            "Nacos配置中心运维相关API"
+          ],
+          "summary": "导入Derby数据库数据"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/cs/ops/localCache",
+          "operationId": "updateLocalCacheFromStore",
+          "tags": [
+            "Nacos配置中心运维相关API"
+          ],
+          "summary": "手动触发本地缓存更新"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/cs/ops/log",
+          "operationId": "setLogLevel_1",
+          "tags": [
+            "Nacos配置中心运维相关API"
+          ],
+          "summary": "设置日志级别"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/client",
+          "operationId": "getClientDetail",
+          "tags": [
+            "Nacos注册中心客户端信息相关API"
+          ],
+          "summary": "查询客户端详细信息"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/client/distro",
+          "operationId": "getResponsibleServer4Client",
+          "tags": [
+            "Nacos注册中心客户端信息相关API"
+          ],
+          "summary": "查询客户端的负责Nacos节点"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/client/list",
+          "operationId": "getClientList",
+          "tags": [
+            "Nacos注册中心客户端信息相关API"
+          ],
+          "summary": "查询所有客户端列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/client/publish/list",
+          "operationId": "getPublishedServiceList",
+          "tags": [
+            "Nacos注册中心客户端信息相关API"
+          ],
+          "summary": "查询客户端注册的服务列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/client/service/publisher/list",
+          "operationId": "getPublishedClientList",
+          "tags": [
+            "Nacos注册中心客户端信息相关API"
+          ],
+          "summary": "查询注册指定服务的客户端列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/client/service/subscriber/list",
+          "operationId": "getSubscribeClientList",
+          "tags": [
+            "Nacos注册中心客户端信息相关API"
+          ],
+          "summary": "查询订阅指定服务的客户端列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/client/subscribe/list",
+          "operationId": "getSubscribeServiceList",
+          "tags": [
+            "Nacos注册中心客户端信息相关API"
+          ],
+          "summary": "查询客户端订阅的服务列表"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ns/cluster",
+          "operationId": "update_3",
+          "tags": [
+            "Nacos注册中心服务相关API"
+          ],
+          "summary": "更新服务集群元数据"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/health/checkers",
+          "operationId": "checkers",
+          "tags": [
+            "Nacos注册中心服务实例健康检查相关API"
+          ],
+          "summary": "获取所有健康检查器"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ns/health/instance",
+          "operationId": "update_2",
+          "tags": [
+            "Nacos注册中心服务实例健康检查相关API"
+          ],
+          "summary": "更新实例健康状态"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ns/instance",
+          "operationId": "deregister",
+          "tags": [
+            "Nacos注册中心服务实例相关API"
+          ],
+          "summary": "注销实例"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/instance",
+          "operationId": "detail_1",
+          "tags": [
+            "Nacos注册中心服务实例相关API"
+          ],
+          "summary": "查询实例详情"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ns/instance",
+          "operationId": "register",
+          "tags": [
+            "Nacos注册中心服务实例相关API"
+          ],
+          "summary": "注册实例"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ns/instance",
+          "operationId": "update_1",
+          "tags": [
+            "Nacos注册中心服务实例相关API"
+          ],
+          "summary": "更新实例元数据"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/instance/list",
+          "operationId": "list_1",
+          "tags": [
+            "Nacos注册中心服务实例相关API"
+          ],
+          "summary": "查询服务的实例列表"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ns/instance/metadata/batch",
+          "operationId": "batchDeleteInstanceMetadata",
+          "tags": [
+            "Nacos注册中心服务实例相关API"
+          ],
+          "summary": "批量删除实例元数据"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ns/instance/metadata/batch",
+          "operationId": "batchUpdateInstanceMetadata",
+          "tags": [
+            "Nacos注册中心服务实例相关API"
+          ],
+          "summary": "批量更新实例元数据"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ns/instance/partial",
+          "operationId": "partialUpdateInstance",
+          "tags": [
+            "Nacos注册中心服务实例相关API"
+          ],
+          "summary": "部分更新实例"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ns/ops/log",
+          "operationId": "setLogLevel",
+          "tags": [
+            "Nacos注册中心运维相关API"
+          ],
+          "summary": "修改日志级别"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/ops/metrics",
+          "operationId": "metrics",
+          "tags": [
+            "Nacos注册中心运维相关API"
+          ],
+          "summary": "查询系统当前数据指标"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/ops/switches",
+          "operationId": "switches",
+          "tags": [
+            "Nacos注册中心运维相关API"
+          ],
+          "summary": "查看Naming模块的相关开关"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ns/ops/switches",
+          "operationId": "updateSwitch",
+          "tags": [
+            "Nacos注册中心运维相关API"
+          ],
+          "summary": "修改Naming模块的相关开关"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/admin/ns/service",
+          "operationId": "remove",
+          "tags": [
+            "Nacos注册中心服务相关API"
+          ],
+          "summary": "删除服务"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/service",
+          "operationId": "detail",
+          "tags": [
+            "Nacos注册中心服务相关API"
+          ],
+          "summary": "查询服务详情"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/admin/ns/service",
+          "operationId": "create",
+          "tags": [
+            "Nacos注册中心服务相关API"
+          ],
+          "summary": "创建服务"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/admin/ns/service",
+          "operationId": "update",
+          "tags": [
+            "Nacos注册中心服务相关API"
+          ],
+          "summary": "更新服务元数据"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/service/list",
+          "operationId": "list",
+          "tags": [
+            "Nacos注册中心服务相关API"
+          ],
+          "summary": "查询服务列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/service/selector/types",
+          "operationId": "listSelectorTypes",
+          "tags": [
+            "Nacos注册中心服务相关API"
+          ],
+          "summary": "获取支持的服务路由选择器类型列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/admin/ns/service/subscribers",
+          "operationId": "subscribers",
+          "tags": [
+            "Nacos注册中心服务相关API"
+          ],
+          "summary": "查询服务的订阅者列表"
+        }
+      ],
+      "tags": [
+        {
+          "name": "Nacos AI A2A 相关API",
+          "operationCount": 6
+        },
+        {
+          "name": "Nacos AI AgentSpec 管理 API",
+          "operationCount": 18
+        },
+        {
+          "name": "Nacos AI MCP服务相关API",
+          "operationCount": 5
+        },
+        {
+          "name": "Nacos AI Pipeline 管理 API",
+          "operationCount": 4
+        },
+        {
+          "name": "Nacos AI Prompt 管理相关 API",
+          "operationCount": 24
+        },
+        {
+          "name": "Nacos AI Skill 相关 API",
+          "operationCount": 19
+        },
+        {
+          "name": "Nacos AI 资源导入 API",
+          "operationCount": 4
+        },
+        {
+          "name": "Nacos引擎核心运维操作相关API",
+          "operationCount": 3
+        },
+        {
+          "name": "Nacos引擎状态相关API",
+          "operationCount": 3
+        },
+        {
+          "name": "Nacos引擎连接负载相关API",
+          "operationCount": 5
+        },
+        {
+          "name": "Nacos引擎集群相关API",
+          "operationCount": 4
+        },
+        {
+          "name": "Nacos插件管理API",
+          "operationCount": 4
+        },
+        {
+          "name": "Nacos注册中心客户端信息相关API",
+          "operationCount": 7
+        },
+        {
+          "name": "Nacos注册中心服务实例健康检查相关API",
+          "operationCount": 2
+        },
+        {
+          "name": "Nacos注册中心服务实例相关API",
+          "operationCount": 8
+        },
+        {
+          "name": "Nacos注册中心服务相关API",
+          "operationCount": 8
+        },
+        {
+          "name": "Nacos注册中心运维相关API",
+          "operationCount": 4
+        },
+        {
+          "name": "Nacos配置中心客户端监控相关API",
+          "operationCount": 2
+        },
+        {
+          "name": "Nacos配置中心相关API",
+          "operationCount": 16
+        },
+        {
+          "name": "Nacos配置中心运维相关API",
+          "operationCount": 4
+        },
+        {
+          "name": "Nacos配置历史相关API",
+          "operationCount": 4
+        },
+        {
+          "name": "Nacos配置容量相关API",
+          "operationCount": 2
+        },
+        {
+          "name": "Nacos集群命名空间相关API",
+          "operationCount": 6
+        }
+      ]
+    },
+    {
+      "name": "client",
+      "file": "api/openapi/upstream/client.zh.json",
+      "title": "Nacos HTTP 客户端 API",
+      "version": "3.2.2",
+      "openapi": "3.1.0",
+      "sha256": "183690b87a9cd4214b9d453c77288ac80cf4bb90bbc5f45f72eba26e28f102c7",
+      "operations": [
+        {
+          "method": "GET",
+          "path": "/v3/client/ai/agentspecs",
+          "operationId": "get_1",
+          "tags": [
+            "Nacos AI AgentSpec 客户端查询 API"
+          ],
+          "summary": "获取 AgentSpec"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/client/ai/agentspecs/search",
+          "operationId": "search",
+          "tags": [
+            "Nacos AI AgentSpec 客户端查询 API"
+          ],
+          "summary": "搜索 AgentSpec"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/client/ai/prompt",
+          "operationId": "queryPrompt",
+          "tags": [
+            "Nacos AI Prompt 客户端查询 API"
+          ],
+          "summary": "查询 Prompt"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/client/ai/skills",
+          "operationId": "get",
+          "tags": [
+            "Nacos AI Skill 客户端查询 API"
+          ],
+          "summary": "下载 Skill"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/client/cs/config",
+          "operationId": "getConfig",
+          "tags": [
+            "Nacos配置中心相关API"
+          ],
+          "summary": "查询配置内容"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/client/ns/instance",
+          "operationId": "deregister",
+          "tags": [
+            "Nacos注册中心相关API"
+          ],
+          "summary": "注销服务实例"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/client/ns/instance",
+          "operationId": "register",
+          "tags": [
+            "Nacos注册中心相关API"
+          ],
+          "summary": "注册服务实例/续约服务实例"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/client/ns/instance/list",
+          "operationId": "list",
+          "tags": [
+            "Nacos注册中心相关API"
+          ],
+          "summary": "查询服务实例列表"
+        }
+      ],
+      "tags": [
+        {
+          "name": "Nacos AI AgentSpec 客户端查询 API",
+          "operationCount": 2
+        },
+        {
+          "name": "Nacos AI Prompt 客户端查询 API",
+          "operationCount": 1
+        },
+        {
+          "name": "Nacos AI Skill 客户端查询 API",
+          "operationCount": 1
+        },
+        {
+          "name": "Nacos注册中心相关API",
+          "operationCount": 3
+        },
+        {
+          "name": "Nacos配置中心相关API",
+          "operationCount": 1
+        }
+      ]
+    },
+    {
+      "name": "console",
+      "file": "api/openapi/upstream/console.zh.json",
+      "title": "Nacos控制台 API",
+      "version": "3.2.2",
+      "openapi": "3.1.0",
+      "sha256": "cfb25fc888d5cde5d56a2e6f38d56f2562f00db23cf451925d497f38357a60ee",
+      "operations": [
+        {
+          "method": "DELETE",
+          "path": "/v3/console/ai/a2a",
+          "operationId": "deleteAgent",
+          "tags": [
+            "Nacos控制台AI A2A 相关API"
+          ],
+          "summary": "删除AgentCard"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/a2a",
+          "operationId": "getAgentCard",
+          "tags": [
+            "Nacos控制台AI A2A 相关API"
+          ],
+          "summary": "查询AgentCard的详情"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/a2a",
+          "operationId": "registerAgent",
+          "tags": [
+            "Nacos控制台AI A2A 相关API"
+          ],
+          "summary": "创建AgentCard"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/a2a",
+          "operationId": "updateAgentCard",
+          "tags": [
+            "Nacos控制台AI A2A 相关API"
+          ],
+          "summary": "更新AgentCard"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/a2a/list",
+          "operationId": "listAgents",
+          "tags": [
+            "Nacos控制台AI A2A 相关API"
+          ],
+          "summary": "查询AgentCard的列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/a2a/version/list",
+          "operationId": "listAgentVersions",
+          "tags": [
+            "Nacos控制台AI A2A 相关API"
+          ],
+          "summary": "查询指定AgentCard的版本列表"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/ai/agentspecs",
+          "operationId": "deleteAgentSpec",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "删除 AgentSpec"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/agentspecs",
+          "operationId": "getAgentSpec",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "查询 AgentSpec"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/agentspecs/biz-tags",
+          "operationId": "updateBizTags_2",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "更新 AgentSpec 业务标签"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/ai/agentspecs/draft",
+          "operationId": "deleteDraft_2",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "删除 AgentSpec 草稿版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/agentspecs/draft",
+          "operationId": "createDraft_2",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "创建 AgentSpec 草稿版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/agentspecs/draft",
+          "operationId": "updateDraft_2",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "更新 AgentSpec 草稿内容"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/agentspecs/force-publish",
+          "operationId": "forcePublish_2",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "强制发布 AgentSpec 版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/agentspecs/labels",
+          "operationId": "updateLabels_2",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "更新 AgentSpec 版本标签"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/agentspecs/list",
+          "operationId": "listAgentSpecs",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "查询 AgentSpec 列表"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/agentspecs/offline",
+          "operationId": "offline_2",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "下线 AgentSpec"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/agentspecs/online",
+          "operationId": "online_2",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "上线 AgentSpec"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/agentspecs/publish",
+          "operationId": "publish_2",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "发布 AgentSpec 版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/agentspecs/redraft",
+          "operationId": "redraft_2",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "重新编辑 AgentSpec 版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/agentspecs/scope",
+          "operationId": "updateScope_1",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "更新 AgentSpec 可见范围"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/agentspecs/submit",
+          "operationId": "submit_2",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "提交 AgentSpec 版本审核"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/agentspecs/upload",
+          "operationId": "uploadAgentSpec",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "上传 AgentSpec"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/agentspecs/version",
+          "operationId": "getAgentSpecVersion",
+          "tags": [
+            "Nacos 控制台 AI AgentSpec 管理 API"
+          ],
+          "summary": "查询 AgentSpec 版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/import/execute",
+          "operationId": "execute",
+          "tags": [
+            "Nacos AI 资源导入 API"
+          ],
+          "summary": "执行 AI 资源导入"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/import/search",
+          "operationId": "search",
+          "tags": [
+            "Nacos AI 资源导入 API"
+          ],
+          "summary": "搜索外部 AI 资源"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/import/sources",
+          "operationId": "listSources",
+          "tags": [
+            "Nacos AI 资源导入 API"
+          ],
+          "summary": "查询 AI 资源导入源"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/import/validate",
+          "operationId": "validate",
+          "tags": [
+            "Nacos AI 资源导入 API"
+          ],
+          "summary": "校验 AI 资源导入项"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/ai/mcp",
+          "operationId": "deleteMcpServer",
+          "tags": [
+            "Nacos控制台AI MCP服务相关API"
+          ],
+          "summary": "删除MCP服务"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/mcp",
+          "operationId": "getMcpServer",
+          "tags": [
+            "Nacos控制台AI MCP服务相关API"
+          ],
+          "summary": "查询MCP服务的详情"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/mcp",
+          "operationId": "createMcpServer",
+          "tags": [
+            "Nacos控制台AI MCP服务相关API"
+          ],
+          "summary": "创建MCP服务"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/mcp",
+          "operationId": "updateMcpServer",
+          "tags": [
+            "Nacos控制台AI MCP服务相关API"
+          ],
+          "summary": "更新MCP服务"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/mcp/import/execute",
+          "operationId": "executeImport",
+          "tags": [
+            "Nacos控制台AI MCP服务相关API"
+          ],
+          "summary": "导入的MCP服务"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/mcp/import/validate",
+          "operationId": "validateImport",
+          "tags": [
+            "Nacos控制台AI MCP服务相关API"
+          ],
+          "summary": "验证待导入的MCP服务"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/mcp/importToolsFromMcp",
+          "operationId": "importToolsFromMcp",
+          "tags": [
+            "Nacos控制台AI MCP服务相关API"
+          ],
+          "summary": "导入MCP工具"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/mcp/list",
+          "operationId": "listMcpServers",
+          "tags": [
+            "Nacos控制台AI MCP服务相关API"
+          ],
+          "summary": "查询MCP服务的服务列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/pipelines",
+          "operationId": "listPipelinesLegacy",
+          "tags": [
+            "Nacos 控制台 AI Pipeline 查询 API"
+          ],
+          "summary": "查询 Pipeline 执行记录列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/pipelines/detail",
+          "operationId": "getPipelineDetail",
+          "tags": [
+            "Nacos 控制台 AI Pipeline 查询 API"
+          ],
+          "summary": "查询 Pipeline 执行记录"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/pipelines/list",
+          "operationId": "listPipelines",
+          "tags": [
+            "Nacos 控制台 AI Pipeline 查询 API"
+          ],
+          "summary": "查询 Pipeline 执行记录列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/pipelines/{pipelineId}",
+          "operationId": "getPipeline",
+          "tags": [
+            "Nacos 控制台 AI Pipeline 查询 API"
+          ],
+          "summary": "查询 Pipeline 执行记录"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/ai/prompt",
+          "operationId": "deletePrompt",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "删除Prompt"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/prompt/biz-tags",
+          "operationId": "updateBizTags_1",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "更新 Prompt 业务标签"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/prompt/description",
+          "operationId": "updateDescription",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "更新 Prompt 描述"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/ai/prompt/draft",
+          "operationId": "deleteDraft_1",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "删除 Prompt 草稿"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/prompt/draft",
+          "operationId": "createDraft_1",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "创建 Prompt 草稿"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/prompt/draft",
+          "operationId": "updateDraft_1",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "更新 Prompt 草稿"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/prompt/force-publish",
+          "operationId": "forcePublish_1",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "强制发布 Prompt 版本"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/prompt/governance",
+          "operationId": "getPromptGovernanceDetail",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "查询 Prompt 治理详情"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/prompt/labels",
+          "operationId": "updateLabels_1",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "更新 Prompt 标签"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/prompt/list",
+          "operationId": "listPrompts",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "查询Prompt列表"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/prompt/offline",
+          "operationId": "offline_1",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "下线 Prompt 版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/prompt/online",
+          "operationId": "online_1",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "上线 Prompt 版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/prompt/publish",
+          "operationId": "publish_1",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "发布 Prompt 版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/prompt/redraft",
+          "operationId": "redraft_1",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "重新编辑 Prompt 版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/prompt/submit",
+          "operationId": "submit_1",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "提交 Prompt 版本"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/prompt/version",
+          "operationId": "getVersionDetail",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "查询 Prompt 版本详情"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/prompt/version/download",
+          "operationId": "downloadPromptVersion",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "下载 Prompt 版本"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/prompt/versions",
+          "operationId": "listPromptVersions",
+          "tags": [
+            "Nacos控制台AI Prompt相关API"
+          ],
+          "summary": "查询Prompt版本列表"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/ai/skills",
+          "operationId": "deleteSkill",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "删除Skill"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/skills",
+          "operationId": "getSkill",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "查询Skill详情"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/skills/biz-tags",
+          "operationId": "updateBizTags",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "更新Skill业务标签"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/ai/skills/draft",
+          "operationId": "deleteDraft",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "删除Skill草稿版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/skills/draft",
+          "operationId": "createDraft",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "创建Skill草稿版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/skills/draft",
+          "operationId": "updateDraft",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "更新Skill草稿内容"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/skills/force-publish",
+          "operationId": "forcePublish",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "强制发布 Skill 版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/skills/labels",
+          "operationId": "updateLabels",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "更新Skill版本标签"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/skills/list",
+          "operationId": "listSkills",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "查询Skill列表"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/skills/offline",
+          "operationId": "offline",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "下线Skill"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/skills/online",
+          "operationId": "online",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "上线Skill"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/skills/publish",
+          "operationId": "publish",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "发布Skill版本"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/skills/redraft",
+          "operationId": "redraft",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "重新编辑 Skill 版本"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ai/skills/scope",
+          "operationId": "updateScope",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "更新Skill可见范围"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/skills/submit",
+          "operationId": "submit",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "提交Skill版本审核"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/skills/upload",
+          "operationId": "uploadSkill",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "上传Skill（ZIP）"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ai/skills/upload/batch",
+          "operationId": "batchUploadSkills",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "批量上传 Skill"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/skills/version",
+          "operationId": "getSkillVersion",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "查询Skill版本详情"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ai/skills/version/download",
+          "operationId": "downloadSkillVersion",
+          "tags": [
+            "Nacos控制台AI Skill相关API"
+          ],
+          "summary": "下载Skill版本 ZIP 包"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/copilot/config",
+          "operationId": "getConfig",
+          "tags": [
+            "Nacos控制台AI Copilot配置相关API"
+          ],
+          "summary": "获取Copilot配置"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/copilot/config",
+          "operationId": "saveConfig",
+          "tags": [
+            "Nacos控制台AI Copilot配置相关API"
+          ],
+          "summary": "保存Copilot配置"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/copilot/prompt/debug",
+          "operationId": "debugPromptStream",
+          "tags": [
+            "Nacos控制台AI Copilot相关API"
+          ],
+          "summary": "流式调试Prompt"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/copilot/prompt/optimize",
+          "operationId": "optimizePromptStream",
+          "tags": [
+            "Nacos控制台AI Copilot相关API"
+          ],
+          "summary": "流式优化Prompt"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/copilot/skill/generate",
+          "operationId": "generateSkillStream",
+          "tags": [
+            "Nacos控制台AI Copilot相关API"
+          ],
+          "summary": "流式生成Skill"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/copilot/skill/optimize",
+          "operationId": "optimizeSkillStream",
+          "tags": [
+            "Nacos控制台AI Copilot相关API"
+          ],
+          "summary": "流式优化Skill"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/core/cluster/nodes",
+          "operationId": "getNodeList",
+          "tags": [
+            "Nacos控制台集群API"
+          ],
+          "summary": "获取Nacos节点运行信息"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/core/namespace",
+          "operationId": "deleteNamespace",
+          "tags": [
+            "Nacos控制台命名空间相关API"
+          ],
+          "summary": "删除命名空间"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/core/namespace",
+          "operationId": "getNamespaceDetail",
+          "tags": [
+            "Nacos控制台命名空间相关API"
+          ],
+          "summary": "获取命名空间详情"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/core/namespace",
+          "operationId": "createNamespace",
+          "tags": [
+            "Nacos控制台命名空间相关API"
+          ],
+          "summary": "创建新命名空间"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/core/namespace",
+          "operationId": "updateNamespace",
+          "tags": [
+            "Nacos控制台命名空间相关API"
+          ],
+          "summary": "更新命名空间"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/core/namespace/exist",
+          "operationId": "checkNamespaceIdExist",
+          "tags": [
+            "Nacos控制台命名空间相关API"
+          ],
+          "summary": "检查命名空间是否存在"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/core/namespace/list",
+          "operationId": "getNamespaceList",
+          "tags": [
+            "Nacos控制台命名空间相关API"
+          ],
+          "summary": "获取8Nacos命名空间列表"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/cs/config",
+          "operationId": "deleteConfig",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "删除配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/cs/config",
+          "operationId": "getConfigDetail",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "获取配置详情"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/cs/config",
+          "operationId": "publishConfig",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "发布配置"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/cs/config/batchDelete",
+          "operationId": "batchDeleteConfigs",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "批量删除配置"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/cs/config/beta",
+          "operationId": "stopBeta",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "停止配置BETA发布"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/cs/config/beta",
+          "operationId": "queryBeta",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "查询配置Beta发布状态"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/cs/config/clone",
+          "operationId": "cloneConfig",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "克隆配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/cs/config/export2",
+          "operationId": "exportConfigV2",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "导出配置"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/cs/config/import",
+          "operationId": "importAndPublishConfig",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "导入配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/cs/config/list",
+          "operationId": "getConfigList",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "查询配置列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/cs/config/listener",
+          "operationId": "getListeners",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "查询配置的监听者列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/cs/config/listener/ip",
+          "operationId": "getAllSubClientConfigByIp",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "查询某个订阅者IP订阅了哪些配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/cs/config/searchDetail",
+          "operationId": "getConfigListByContent",
+          "tags": [
+            "Nacos控制台配置中心相关API"
+          ],
+          "summary": "通过配置内容查询配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/cs/history",
+          "operationId": "getConfigHistoryInfo",
+          "tags": [
+            "Nacos控制台配置历史相关API"
+          ],
+          "summary": "查询配置的某次历史变更记录"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/cs/history/configs",
+          "operationId": "getConfigsByTenant",
+          "tags": [
+            "Nacos控制台配置历史相关API"
+          ],
+          "summary": "查询命名空间下的配置列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/cs/history/list",
+          "operationId": "listConfigHistory",
+          "tags": [
+            "Nacos控制台配置历史相关API"
+          ],
+          "summary": "查询配置发布历史"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/cs/history/previous",
+          "operationId": "getPreviousConfigHistoryInfo",
+          "tags": [
+            "Nacos控制台配置历史相关API"
+          ],
+          "summary": "查询配置最新状态的前一次变更历史"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/health/liveness",
+          "operationId": "liveness",
+          "tags": [
+            "Nacos控制台健康检查API"
+          ],
+          "summary": "获取Nacos控制台的存活状态"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/health/readiness",
+          "operationId": "readiness",
+          "tags": [
+            "Nacos控制台健康检查API"
+          ],
+          "summary": "获取Nacos控制台的可读状态"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/ns/instance",
+          "operationId": "removeInstance",
+          "tags": [
+            "Nacos控制台注册中心服务实例相关API"
+          ],
+          "summary": "删除持久化实例"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ns/instance",
+          "operationId": "updateInstance",
+          "tags": [
+            "Nacos控制台注册中心服务实例相关API"
+          ],
+          "summary": "更新实例元数据"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ns/instance/list",
+          "operationId": "getInstanceList",
+          "tags": [
+            "Nacos控制台注册中心服务实例相关API"
+          ],
+          "summary": "查询服务的实例列表"
+        },
+        {
+          "method": "DELETE",
+          "path": "/v3/console/ns/service",
+          "operationId": "deleteService",
+          "tags": [
+            "Nacos控制台注册中心服务相关API"
+          ],
+          "summary": "删除服务"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ns/service",
+          "operationId": "getServiceDetail",
+          "tags": [
+            "Nacos控制台注册中心服务相关API"
+          ],
+          "summary": "查询服务详情"
+        },
+        {
+          "method": "POST",
+          "path": "/v3/console/ns/service",
+          "operationId": "createService",
+          "tags": [
+            "Nacos控制台注册中心服务相关API"
+          ],
+          "summary": "创建服务"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ns/service",
+          "operationId": "updateService",
+          "tags": [
+            "Nacos控制台注册中心服务相关API"
+          ],
+          "summary": "更新服务元数据"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/ns/service/cluster",
+          "operationId": "updateCluster",
+          "tags": [
+            "Nacos控制台注册中心服务相关API"
+          ],
+          "summary": "更新服务集群元数据"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ns/service/list",
+          "operationId": "getServiceList",
+          "tags": [
+            "Nacos控制台注册中心服务相关API"
+          ],
+          "summary": "查询服务列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ns/service/selector/types",
+          "operationId": "getSelectorTypeList",
+          "tags": [
+            "Nacos控制台注册中心服务相关API"
+          ],
+          "summary": "获取支持的服务路由选择器类型列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/ns/service/subscribers",
+          "operationId": "subscribers",
+          "tags": [
+            "Nacos控制台注册中心服务相关API"
+          ],
+          "summary": "查询服务的订阅者列表"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/plugin",
+          "operationId": "getPluginDetail",
+          "tags": [
+            "Nacos控制台插件API"
+          ],
+          "summary": "获取插件详情"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/plugin/availability",
+          "operationId": "getPluginAvailability",
+          "tags": [
+            "Nacos控制台插件API"
+          ],
+          "summary": "查询插件在集群节点上的可用性"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/plugin/config",
+          "operationId": "updatePluginConfig",
+          "tags": [
+            "Nacos控制台插件API"
+          ],
+          "summary": "更新插件配置"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/plugin/list",
+          "operationId": "getPluginList",
+          "tags": [
+            "Nacos控制台插件API"
+          ],
+          "summary": "获取插件列表"
+        },
+        {
+          "method": "PUT",
+          "path": "/v3/console/plugin/status",
+          "operationId": "updatePluginStatus",
+          "tags": [
+            "Nacos控制台插件API"
+          ],
+          "summary": "启用或禁用插件"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/server/announcement",
+          "operationId": "getAnnouncement",
+          "tags": [
+            "Nacos控制台状态相关API"
+          ],
+          "summary": "获取控制台公告信息"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/server/guide",
+          "operationId": "getConsoleUiGuide",
+          "tags": [
+            "Nacos控制台状态相关API"
+          ],
+          "summary": "获取控制台引导内容"
+        },
+        {
+          "method": "GET",
+          "path": "/v3/console/server/state",
+          "operationId": "serverState",
+          "tags": [
+            "Nacos控制台状态相关API"
+          ],
+          "summary": "获取集群状态信息"
+        }
+      ],
+      "tags": [
+        {
+          "name": "Nacos AI 资源导入 API",
+          "operationCount": 4
+        },
+        {
+          "name": "Nacos 控制台 AI AgentSpec 管理 API",
+          "operationCount": 17
+        },
+        {
+          "name": "Nacos 控制台 AI Pipeline 查询 API",
+          "operationCount": 4
+        },
+        {
+          "name": "Nacos控制台AI A2A 相关API",
+          "operationCount": 6
+        },
+        {
+          "name": "Nacos控制台AI Copilot相关API",
+          "operationCount": 4
+        },
+        {
+          "name": "Nacos控制台AI Copilot配置相关API",
+          "operationCount": 2
+        },
+        {
+          "name": "Nacos控制台AI MCP服务相关API",
+          "operationCount": 8
+        },
+        {
+          "name": "Nacos控制台AI Prompt相关API",
+          "operationCount": 18
+        },
+        {
+          "name": "Nacos控制台AI Skill相关API",
+          "operationCount": 19
+        },
+        {
+          "name": "Nacos控制台健康检查API",
+          "operationCount": 2
+        },
+        {
+          "name": "Nacos控制台命名空间相关API",
+          "operationCount": 6
+        },
+        {
+          "name": "Nacos控制台插件API",
+          "operationCount": 5
+        },
+        {
+          "name": "Nacos控制台注册中心服务实例相关API",
+          "operationCount": 3
+        },
+        {
+          "name": "Nacos控制台注册中心服务相关API",
+          "operationCount": 8
+        },
+        {
+          "name": "Nacos控制台状态相关API",
+          "operationCount": 3
+        },
+        {
+          "name": "Nacos控制台配置中心相关API",
+          "operationCount": 13
+        },
+        {
+          "name": "Nacos控制台配置历史相关API",
+          "operationCount": 4
+        },
+        {
+          "name": "Nacos控制台集群API",
+          "operationCount": 1
+        }
+      ]
+    }
+  ],
+  "grpc": [
+    {
+      "name": "BiRequestStream",
+      "rpcs": [
+        {
+          "name": "requestBiStream",
+          "clientStream": true,
+          "serverStream": true,
+          "requestType": "Payload",
+          "responseType": "Payload"
+        }
+      ]
+    },
+    {
+      "name": "Request",
+      "rpcs": [
+        {
+          "name": "request",
+          "clientStream": false,
+          "serverStream": false,
+          "requestType": "Payload",
+          "responseType": "Payload"
+        }
+      ]
+    },
+    {
+      "name": "RequestStream",
+      "rpcs": [
+        {
+          "name": "requestStream",
+          "clientStream": false,
+          "serverStream": true,
+          "requestType": "Payload",
+          "responseType": "Payload"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "openapiSurfaces": 3,
+    "openapiOperations": 297,
+    "grpcServices": 3,
+    "grpcRpcs": 3
+  },
+  "sources": {
+    "grpc": "other/nacos-sdk-go/api/proto/nacos_grpc_service.proto",
+    "openapi": "https://nacos.io/swagger/{client,admin,console}/zh/api.json",
+    "protoSHA256": "90430a85194ed8792661a648b2b1bb93a8c59f688ed5f492e15110dcebae78de"
+  }
+}

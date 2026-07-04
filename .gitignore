@@ -1,0 +1,9 @@
+/gonacos
+/bin/
+/dist/
+/coverage.out
+/tmp/
+/web/dist/
+/.omc/
+/.saker-workspace-active
+

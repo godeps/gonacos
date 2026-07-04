@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	authsvc "github.com/godeps/gonacos/internal/auth"
-	"github.com/godeps/gonacos/internal/protocol"
+	authsvc "github.com/godeps/gonacos/pkg/auth"
+	"github.com/godeps/gonacos/pkg/protocol"
 )
 
 // newAuthTestServices creates a fresh auth service with the default admin
@@ -318,10 +318,10 @@ func TestAuthMiddleware_IntegrationWithMux(t *testing.T) {
 	}
 }
 
-// newServicesWithAuth returns a serviceBundle whose auth service is the
+// newServicesWithAuth returns a ServiceBundle whose auth service is the
 // provided one, so tests can share a single auth instance with the mux.
-func newServicesWithAuth(auth *authsvc.Service) *serviceBundle {
-	bundle := newServices()
-	bundle.auth = auth
+func newServicesWithAuth(auth *authsvc.Service) *ServiceBundle {
+	bundle := NewServiceBundle()
+	bundle.Auth = auth
 	return bundle
 }

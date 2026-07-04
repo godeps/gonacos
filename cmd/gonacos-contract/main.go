@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/godeps/gonacos/internal/contract"
+	"github.com/godeps/gonacos/pkg/contract"
 )
 
 func main() {

@@ -7,9 +7,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/godeps/gonacos/internal/observability"
-	"github.com/godeps/gonacos/internal/protocol"
-	"github.com/godeps/gonacos/internal/store"
+	"github.com/godeps/gonacos/pkg/observability"
+	"github.com/godeps/gonacos/pkg/protocol"
+	"github.com/godeps/gonacos/pkg/store"
 )
 
 // opsHandler wires observability and backup endpoints. The snapshot

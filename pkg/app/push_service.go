@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	configsvc "github.com/godeps/gonacos/internal/config"
-	namingsvc "github.com/godeps/gonacos/internal/naming"
-	"github.com/godeps/gonacos/internal/protocol/grpc"
+	configsvc "github.com/godeps/gonacos/pkg/config"
+	namingsvc "github.com/godeps/gonacos/pkg/naming"
+	"github.com/godeps/gonacos/pkg/protocol/grpc"
 )
 
 // PushService wires config and naming change notifications to the gRPC

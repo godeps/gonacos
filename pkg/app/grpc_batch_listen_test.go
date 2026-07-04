@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	grpcsrv "github.com/godeps/gonacos/internal/protocol/grpc"
+	grpcsrv "github.com/godeps/gonacos/pkg/protocol/grpc"
 )
 
 // TestGRPCConfigBatchListen verifies the gRPC ConfigBatchListenRequest
@@ -22,10 +22,10 @@ func TestGRPCConfigBatchListen(t *testing.T) {
 
 	// Build one service bundle shared by the HTTP handler and the gRPC
 	// server. NewHandlerWithServices wires the bridge to the bundle's
-	// config service, and setupGRPCServer uses the same bundle's adapters.
-	services := newServices()
+	// config service, and SetupGRPCServerWithPush uses the same bundle's adapters.
+	services := NewServiceBundle()
 	handler := NewHandlerWithServices("../..", services)
-	srv := setupGRPCServer(services)
+	srv := SetupGRPCServerWithPush(services, nil)
 	addr := "127.0.0.1:0"
 	go func() { _ = srv.ListenAndServe(addr) }()
 	for i := 0; i < 50 && srv.Addr() == nil; i++ {

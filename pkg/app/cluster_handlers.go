@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/godeps/gonacos/internal/cluster"
-	"github.com/godeps/gonacos/internal/protocol"
+	"github.com/godeps/gonacos/pkg/cluster"
+	"github.com/godeps/gonacos/pkg/protocol"
 )
 
 type clusterHandler struct {

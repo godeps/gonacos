@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/godeps/gonacos/internal/ai"
-	"github.com/godeps/gonacos/internal/protocol"
+	"github.com/godeps/gonacos/pkg/ai"
+	"github.com/godeps/gonacos/pkg/protocol"
 )
 
 type aiHandler struct {

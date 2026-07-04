@@ -3,28 +3,21 @@ package app
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/godeps/gonacos/internal/cluster"
-	configsvc "github.com/godeps/gonacos/internal/config"
-	namingsvc "github.com/godeps/gonacos/internal/naming"
+	"github.com/godeps/gonacos/pkg/cluster"
+	configsvc "github.com/godeps/gonacos/pkg/config"
+	namingsvc "github.com/godeps/gonacos/pkg/naming"
 )
 
-// redisAddrFromEnv returns the Redis address from the GONACOS_REDIS_ADDR env
-// var, or "" if not set.
-func redisAddrFromEnv() string {
-	return os.Getenv("GONACOS_REDIS_ADDR")
-}
-
-// setupRedisSync creates a RedisSync wired to the provided Redis client,
+// SetupRedisSync creates a RedisSync wired to the provided Redis client,
 // configures it into the config and naming services, and starts the
 // subscription + heartbeat goroutines. Returns nil if client is nil.
 //
 // The caller retains ownership of the client; RedisSync.Stop will not close
 // it. This lets the persistence layer and the sync layer share one client.
-func setupRedisSync(client *redis.Client, nodeID string, member cluster.Member, configSvc *configsvc.Service, namingSvc *namingsvc.Service) (*cluster.RedisSync, error) {
+func SetupRedisSync(client *redis.Client, nodeID string, member cluster.Member, configSvc *configsvc.Service, namingSvc *namingsvc.Service) (*cluster.RedisSync, error) {
 	if client == nil {
 		return nil, nil
 	}

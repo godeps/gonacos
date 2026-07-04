@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/godeps/gonacos/internal/store"
+	"github.com/godeps/gonacos/pkg/store"
 )
 
 func TestOpsMetricsEndpoint(t *testing.T) {

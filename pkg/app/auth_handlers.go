@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/godeps/gonacos/internal/auth"
-	"github.com/godeps/gonacos/internal/protocol"
+	"github.com/godeps/gonacos/pkg/auth"
+	"github.com/godeps/gonacos/pkg/protocol"
 )
 
 type authHandler struct {

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	configsvc "github.com/godeps/gonacos/internal/config"
-	"github.com/godeps/gonacos/internal/protocol"
+	configsvc "github.com/godeps/gonacos/pkg/config"
+	"github.com/godeps/gonacos/pkg/protocol"
 )
 
 type configHandler struct {

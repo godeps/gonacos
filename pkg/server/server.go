@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -28,6 +29,7 @@ import (
 //     [Server.RedisClient] to integrate with backup/restore pipelines.
 type Server struct {
 	opts          options
+	logger        Logger
 	bundle        *app.ServiceBundle
 	coord         *store.Coordinator
 	persist       *store.RedisPersistence
@@ -37,6 +39,8 @@ type Server struct {
 	embeddedRedis *store.EmbeddedRedis
 	grpcSrv       *grpcsrv.Server
 	httpSrv       *http.Server
+	httpLn        net.Listener
+	grpcLn        net.Listener
 	stopPeriodic  func()
 }
 
@@ -52,8 +56,9 @@ func New(opts ...Option) (*Server, error) {
 	for _, opt := range opts {
 		opt(&o)
 	}
+	logger := o.resolveLogger()
 
-	bundle := app.NewServiceBundle()
+	bundle := app.NewServiceBundleWithAuthSecret(o.resolveAuthSecret())
 	coord := store.NewCoordinator()
 	coord.Register(bundle.Namespace)
 	coord.Register(bundle.Config)
@@ -80,10 +85,16 @@ func New(opts ...Option) (*Server, error) {
 
 	persist := store.NewRedisPersistence(redisClient, coord, dumpPath)
 	if err := persist.Load(context.Background()); err != nil {
-		// Non-fatal: start with empty state.
-		fmt.Printf("warn: load snapshot: %v\n", err)
+		if o.resolveStrictSnapshot() {
+			_ = redisClient.Close()
+			if embeddedRedis != nil {
+				_ = embeddedRedis.Close()
+			}
+			return nil, fmt.Errorf("load snapshot (strict mode): %w", err)
+		}
+		logger.Warnf("load snapshot: %v (starting with empty state)", err)
 	} else {
-		fmt.Println("snapshot loaded")
+		logger.Infof("snapshot loaded")
 	}
 
 	push := app.NewPushService(grpcsrv.NewConnectionRegistry(), bundle.Config, bundle.Naming)
@@ -119,14 +130,40 @@ func New(opts ...Option) (*Server, error) {
 
 	stopPeriodic := persist.StartPeriodic(context.Background(), o.resolveSnapshotInterval())
 
+	httpAddr := o.resolveAddr()
+	httpLn, err := net.Listen("tcp", httpAddr)
+	if err != nil {
+		_ = redisClient.Close()
+		if embeddedRedis != nil {
+			_ = embeddedRedis.Close()
+		}
+		if s := redisSync; s != nil {
+			_ = s.Stop()
+		}
+		return nil, fmt.Errorf("http listen %q: %w", httpAddr, err)
+	}
+	grpcAddr := o.resolveGRPCAddr()
+	grpcLn, err := net.Listen("tcp", grpcAddr)
+	if err != nil {
+		_ = httpLn.Close()
+		_ = redisClient.Close()
+		if embeddedRedis != nil {
+			_ = embeddedRedis.Close()
+		}
+		if s := redisSync; s != nil {
+			_ = s.Stop()
+		}
+		return nil, fmt.Errorf("grpc listen %q: %w", grpcAddr, err)
+	}
+
 	httpSrv := &http.Server{
-		Addr:              o.resolveAddr(),
 		Handler:           app.NewHandlerWithServicesWithCoordinator(o.resolveRoot(), bundle, coord),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	return &Server{
 		opts:          o,
+		logger:        logger,
 		bundle:        bundle,
 		coord:         coord,
 		persist:       persist,
@@ -136,24 +173,44 @@ func New(opts ...Option) (*Server, error) {
 		embeddedRedis: embeddedRedis,
 		grpcSrv:       grpcSrv,
 		httpSrv:       httpSrv,
+		httpLn:        httpLn,
+		grpcLn:        grpcLn,
 		stopPeriodic:  stopPeriodic,
 	}, nil
 }
 
 // Start launches the HTTP and gRPC servers and blocks until ctx is cancelled
 // or one of the servers fails. On exit it calls [Server.Shutdown] to flush
-// the snapshot and close resources.
+// the snapshot and close resources. When [WithTLS] is set, both listeners
+// serve TLS; otherwise both are plaintext (gRPC uses h2c).
+//
+// Listeners are pre-bound in [New], so [Server.HTTPAddr] and [Server.GRPCAddr]
+// return the actual bound addresses (useful when binding to :0) even before
+// Start returns.
 func (s *Server) Start(ctx context.Context) error {
+	certFile, keyFile := s.opts.resolveTLS()
 	errc := make(chan error, 2)
 	go func() {
-		if err := s.grpcSrv.ListenAndServe(s.opts.resolveGRPCAddr()); err != nil && err != http.ErrServerClosed {
+		var err error
+		if certFile != "" && keyFile != "" {
+			err = s.grpcSrv.ServeTLS(s.grpcLn, certFile, keyFile)
+		} else {
+			err = s.grpcSrv.Serve(s.grpcLn)
+		}
+		if err != nil && err != http.ErrServerClosed {
 			errc <- fmt.Errorf("grpc serve: %w", err)
 			return
 		}
 		errc <- nil
 	}()
 	go func() {
-		if err := s.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if certFile != "" && keyFile != "" {
+			err = s.httpSrv.ServeTLS(s.httpLn, certFile, keyFile)
+		} else {
+			err = s.httpSrv.Serve(s.httpLn)
+		}
+		if err != nil && err != http.ErrServerClosed {
 			errc <- fmt.Errorf("http serve: %w", err)
 			return
 		}
@@ -165,7 +222,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return s.Shutdown(context.Background())
 	case err := <-errc:
 		if cerr := s.Shutdown(context.Background()); cerr != nil {
-			fmt.Printf("warn: shutdown after serve error: %v\n", cerr)
+			s.logger.Warnf("shutdown after serve error: %v", cerr)
 		}
 		return err
 	}
@@ -179,7 +236,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.stopPeriodic()
 	}
 	if err := s.persist.Save(ctx); err != nil {
-		fmt.Printf("warn: save snapshot on shutdown: %v\n", err)
+		s.logger.Warnf("save snapshot on shutdown: %v", err)
 	}
 	if s.redisSync != nil {
 		_ = s.redisSync.Stop()
@@ -187,6 +244,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	_ = s.redisClient.Close()
 	if s.embeddedRedis != nil {
 		_ = s.embeddedRedis.Close()
+	}
+	// Closing the listeners unblocks any Accept loops that haven't been
+	// drained by http.Server.Shutdown / grpc.Server.Shutdown yet.
+	if s.httpLn != nil {
+		_ = s.httpLn.Close()
+	}
+	if s.grpcLn != nil {
+		_ = s.grpcLn.Close()
 	}
 	if err := s.httpSrv.Shutdown(ctx); err != nil {
 		return fmt.Errorf("shutdown http server: %w", err)
@@ -220,9 +285,23 @@ func (s *Server) Restore(env *store.Envelope) error {
 	return s.coord.Restore(env)
 }
 
-// HTTPAddr returns the configured HTTP listen address.
-func (s *Server) HTTPAddr() string { return s.opts.resolveAddr() }
+// HTTPAddr returns the actual bound HTTP address. When the configured address
+// uses :0, this returns the kernel-assigned port after [New] returns. Returns
+// the configured address as a fallback when the listener is not yet bound.
+func (s *Server) HTTPAddr() string {
+	if s.httpLn != nil {
+		return s.httpLn.Addr().String()
+	}
+	return s.opts.resolveAddr()
+}
 
-// GRPCAddr returns the configured gRPC listen address. If not set explicitly
-// via [WithGRPCAddr], it is derived from the HTTP port + 1000.
-func (s *Server) GRPCAddr() string { return s.opts.resolveGRPCAddr() }
+// GRPCAddr returns the actual bound gRPC address. When the configured address
+// uses :0, this returns the kernel-assigned port after [New] returns. If not
+// set explicitly via [WithGRPCAddr], the gRPC port is derived from the HTTP
+// port + 1000 (Nacos convention: 8848 -> 9848).
+func (s *Server) GRPCAddr() string {
+	if s.grpcLn != nil {
+		return s.grpcLn.Addr().String()
+	}
+	return s.opts.resolveGRPCAddr()
+}

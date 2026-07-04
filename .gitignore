@@ -7,5 +7,6 @@
 /.omc/
 /.saker-workspace-active
 /.gonacos/
+**/.gonacos/
 /.last-run.json
 

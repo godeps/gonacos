@@ -34,6 +34,15 @@ func TestEmbedDirectCall(t *testing.T) {
 		t.Fatal("RedisClient() returned nil")
 	}
 
+	// With :0 ports, HTTPAddr/GRPCAddr must reflect the kernel-assigned
+	// port after New returns (before Start is called).
+	if httpAddr := srv.HTTPAddr(); httpAddr == "" || httpAddr == "127.0.0.1:0" {
+		t.Fatalf("HTTPAddr = %q, want a kernel-assigned port", httpAddr)
+	}
+	if grpcAddr := srv.GRPCAddr(); grpcAddr == "" || grpcAddr == "127.0.0.1:0" {
+		t.Fatalf("GRPCAddr = %q, want a kernel-assigned port", grpcAddr)
+	}
+
 	// Direct config publish/get without going through HTTP/gRPC.
 	req := config.PublishRequest{
 		NamespaceID: "public",

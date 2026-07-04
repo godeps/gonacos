@@ -54,14 +54,14 @@ func TestMain(m *testing.M) {
 	}
 
 	// Kill any stale process on the port.
-	if conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", serverHost, serverPort)); err == nil {
+	if conn, err := net.Dial("tcp", net.JoinHostPort(serverHost, strconv.Itoa(serverPort))); err == nil {
 		conn.Close()
 		fmt.Fprintf(os.Stderr, "port %d already in use; cannot start gonacos\n", serverPort)
 		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, binary, "serve", fmt.Sprintf("%s:%d", serverHost, serverPort))
+	cmd := exec.CommandContext(ctx, binary, "serve", net.JoinHostPort(serverHost, strconv.Itoa(serverPort)))
 	cmd.Dir = filepath.Dir(binary)
 	// Discard server output to avoid fd sharing with the test process,
 	// which causes "Test I/O incomplete" on exit.
@@ -103,7 +103,7 @@ func TestMain(m *testing.M) {
 func waitForServer(host string, port int, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), 500*time.Millisecond)
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 500*time.Millisecond)
 		if err == nil {
 			conn.Close()
 			return true
@@ -114,7 +114,7 @@ func waitForServer(host string, port int, timeout time.Duration) bool {
 }
 
 func bootstrapAdmin() bool {
-	url := fmt.Sprintf("http://%s:%d/v3/auth/user/admin", serverHost, serverPort)
+	url := "http://" + net.JoinHostPort(serverHost, strconv.Itoa(serverPort)) + "/v3/auth/user/admin"
 	body := "password=" + adminPassword
 	resp, err := sendForm(url, body)
 	if err != nil {

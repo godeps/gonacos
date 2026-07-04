@@ -116,12 +116,16 @@ func main() {
 
 | 选项 | 默认值 | 说明 |
 |---|---|---|
-| `WithAddr(addr)` | `:8848` | HTTP 监听地址。 |
-| `WithGRPCAddr(addr)` | 派生(`HTTP+1000`) | gRPC 监听地址。 |
+| `WithAddr(addr)` | `:8848` | HTTP 监听地址。用 `:0` 让内核选空闲端口,`HTTPAddr()` 返回实际端口。 |
+| `WithGRPCAddr(addr)` | 派生(`HTTP+1000`) | gRPC 监听地址。用 `:0` 让内核选空闲端口,`GRPCAddr()` 返回实际端口。 |
 | `WithRedisAddr(addr)` | `""`(内嵌) | Redis 地址。空 = 内嵌 miniredis(standalone)。非空 = 外部 Redis + 集群同步。 |
 | `WithDataDir(dir)` | `<root>/.gonacos/data` | 内嵌 Redis 磁盘 dump 目录。`WithRedisAddr` 设置时忽略。 |
 | `WithSnapshotInterval(d)` | `30s` | 周期性快照保存间隔。 |
 | `WithRoot(root)` | `.` | 项目根目录,用于 OpenAPI 契约枚举(为未实现端点注册 501 stub)。 |
+| `WithAuthSecret(secret)` | 每进程随机 | HMAC-SHA256 token 签名密钥。多节点集群必须设置相同密钥,才能互相校验 token。 |
+| `WithTLS(certFile, keyFile)` | `""`(明文) | PEM 编码的证书 + 私钥,HTTP 和 gRPC 同时启用 TLS。gRPC 通过 ALPN 协商 HTTP/2。 |
+| `WithLogger(l)` | stderr 经 `log` 输出 | 注入结构化日志(zap、zerolog、slog),包装成 `Logger` 接口即可。 |
+| `WithStrictSnapshot(bool)` | `false` | 为 `true` 时,快照加载失败会让 `New` 返回错误,而不是以空状态启动。 |
 
 环境变量 fallback(未设置对应选项时使用):
 
@@ -130,6 +134,9 @@ func main() {
 | `GONACOS_REDIS_ADDR` | `WithRedisAddr` |
 | `GONACOS_DATA_DIR` | `WithDataDir` |
 | `GONACOS_SNAPSHOT_INTERVAL` | `WithSnapshotInterval` |
+| `GONACOS_AUTH_SECRET` | `WithAuthSecret` |
+| `GONACOS_TLS_CERT_FILE` + `GONACOS_TLS_KEY_FILE` | `WithTLS` |
+| `GONACOS_STRICT_SNAPSHOT` | `WithStrictSnapshot`(`1`/`true`/`yes` 启用) |
 
 ## 项目布局
 

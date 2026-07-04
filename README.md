@@ -127,12 +127,16 @@ Options (`server.With*`):
 
 | Option | Default | Description |
 |---|---|---|
-| `WithAddr(addr)` | `:8848` | HTTP listen address. |
-| `WithGRPCAddr(addr)` | derived (`HTTP+1000`) | gRPC listen address. |
+| `WithAddr(addr)` | `:8848` | HTTP listen address. Use `:0` to let the kernel pick a free port; `HTTPAddr()` reports the bound port. |
+| `WithGRPCAddr(addr)` | derived (`HTTP+1000`) | gRPC listen address. Use `:0` to let the kernel pick a free port; `GRPCAddr()` reports the bound port. |
 | `WithRedisAddr(addr)` | `""` (embedded) | Redis address. Empty = embedded miniredis (standalone). Non-empty = external Redis + cluster sync. |
 | `WithDataDir(dir)` | `<root>/.gonacos/data` | Directory for the embedded Redis disk dump. Ignored when `WithRedisAddr` is set. |
 | `WithSnapshotInterval(d)` | `30s` | Periodic snapshot save interval. |
 | `WithRoot(root)` | `.` | Project root for OpenAPI contract enumeration (501 stubs for unimplemented endpoints). |
+| `WithAuthSecret(secret)` | random per-process | HMAC-SHA256 token signing secret. **Set this** when running multiple nodes that must verify each other's tokens. |
+| `WithTLS(certFile, keyFile)` | `""` (plaintext) | PEM-encoded cert + key for TLS on both HTTP and gRPC. gRPC negotiates HTTP/2 via ALPN. |
+| `WithLogger(l)` | stderr via `log` | Plug in a structured logger (zap, zerolog, slog) by wrapping it to match the `Logger` interface. |
+| `WithStrictSnapshot(bool)` | `false` | When `true`, `New` returns an error if the snapshot fails to load instead of starting with empty state. |
 
 Environment variable fallbacks (used when the corresponding option is not set):
 
@@ -141,6 +145,9 @@ Environment variable fallbacks (used when the corresponding option is not set):
 | `GONACOS_REDIS_ADDR` | `WithRedisAddr` |
 | `GONACOS_DATA_DIR` | `WithDataDir` |
 | `GONACOS_SNAPSHOT_INTERVAL` | `WithSnapshotInterval` |
+| `GONACOS_AUTH_SECRET` | `WithAuthSecret` |
+| `GONACOS_TLS_CERT_FILE` + `GONACOS_TLS_KEY_FILE` | `WithTLS` |
+| `GONACOS_STRICT_SNAPSHOT` | `WithStrictSnapshot` (`1`/`true`/`yes` to enable) |
 
 ## Project layout
 

@@ -107,6 +107,14 @@ func (s *Server) ListenAndServe(addr string) error {
 	if err != nil {
 		return fmt.Errorf("grpc listen %q: %w", addr, err)
 	}
+	return s.Serve(ln)
+}
+
+// Serve runs the gRPC server on a pre-bound listener using unencrypted
+// HTTP/2 (h2c). Useful when the caller wants to pre-bind the port (for
+// example, to capture the actual port when binding to :0) before starting
+// the server. Takes ownership of ln; closing ln is done via [Server.Shutdown].
+func (s *Server) Serve(ln net.Listener) error {
 	protocols := &http.Protocols{}
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
@@ -119,6 +127,33 @@ func (s *Server) ListenAndServe(addr string) error {
 	}
 	s.mu.Unlock()
 	return s.server.Serve(ln)
+}
+
+// ListenAndServeTLS starts the gRPC server with TLS. The server negotiates
+// HTTP/2 via ALPN (h2) so standard gRPC clients can connect with TLS enabled.
+// certFile and keyFile must be PEM-encoded. Returns an error if either file
+// cannot be read or parsed.
+func (s *Server) ListenAndServeTLS(addr, certFile, keyFile string) error {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("grpc listen %q: %w", addr, err)
+	}
+	return s.ServeTLS(ln, certFile, keyFile)
+}
+
+// ServeTLS runs the gRPC server with TLS on a pre-bound listener. The server
+// negotiates HTTP/2 via ALPN (h2). Useful when the caller wants to pre-bind
+// the port (for example, to capture the actual port when binding to :0)
+// before starting the server.
+func (s *Server) ServeTLS(ln net.Listener, certFile, keyFile string) error {
+	s.mu.Lock()
+	s.listener = ln
+	s.server = &http.Server{
+		Handler:     s,
+		IdleTimeout: 5 * time.Minute,
+	}
+	s.mu.Unlock()
+	return s.server.ServeTLS(ln, certFile, keyFile)
 }
 
 // Shutdown gracefully stops the server.

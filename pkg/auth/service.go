@@ -1,10 +1,3 @@
-// Package auth implements the default Nacos v3 auth plugin: user, role,
-// permission CRUD, admin bootstrap, and JWT-like token issuance.
-//
-// The Service type owns an in-memory user/role/permission registry. Tokens are
-// signed with HMAC-SHA256 and verified on each protected request. The default
-// admin user "nacos" with password "nacos" is seeded on first construction
-// unless CreateAdmin is called explicitly.
 package auth
 
 import (
@@ -123,6 +116,15 @@ func NewService() *Service {
 	if err != nil {
 		panic("auth: cannot read system CSPRNG: " + err.Error())
 	}
+	return NewServiceWithSecret(secret)
+}
+
+// NewServiceWithSecret creates an auth Service signed with the provided secret.
+// Use this when running multiple nodes that must verify each other's tokens —
+// all nodes in a cluster must share the same secret. An empty secret produces
+// a Service whose tokens are unsigned and rejected on verify, which is useful
+// only for tests that disable auth.
+func NewServiceWithSecret(secret string) *Service {
 	return &Service{
 		users:       map[string]*User{},
 		roles:       map[string][]string{},

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -37,11 +38,27 @@ type ServiceBundle struct {
 
 // NewServiceBundle builds a fresh set of service instances. Each service is
 // constructed with its own zero-dependency NewService constructor; AI is
-// created with a nil LLM client (stubbed).
+// created with a nil LLM client (stubbed). The auth service signs tokens with
+// a random per-process secret — use [NewServiceBundleWithAuthSecret] when
+// running multiple nodes that must verify each other's tokens.
 func NewServiceBundle() *ServiceBundle {
+	return NewServiceBundleWithAuthSecret("")
+}
+
+// NewServiceBundleWithAuthSecret builds a service bundle whose auth service
+// signs tokens with the provided secret. An empty secret falls back to a
+// random per-process secret (matching [NewServiceBundle]); use a non-empty
+// shared secret when running multiple gonacos nodes behind a shared token
+// domain so that a token issued by one node verifies on every other node.
+func NewServiceBundleWithAuthSecret(authSecret string) *ServiceBundle {
 	configSvc := configsvc.NewService()
 	namingSvc := namingsvc.NewService()
-	authSvc := authsvc.NewService()
+	var authSvc *authsvc.Service
+	if authSecret != "" {
+		authSvc = authsvc.NewServiceWithSecret(authSecret)
+	} else {
+		authSvc = authsvc.NewService()
+	}
 	aiSvc := aivsvc.NewService(nil)
 	clusterSvc := clustersvc.NewService(clustersvc.ModeStandalone, "", 0, 0, 0)
 	return &ServiceBundle{
@@ -149,7 +166,9 @@ func NewHandlerWithServicesWithCoordinator(root string, services *ServiceBundle,
 	mux.HandleFunc("/v3/console/ui/", web.ConsoleHandler())
 
 	manifest, err := contract.Build(root)
-	if err == nil {
+	if err != nil {
+		log.Printf("app: contract build from root %q failed (%v); 501 stubs for unimplemented endpoints will not be registered", root, err)
+	} else {
 		for _, surface := range manifest.OpenAPI {
 			for _, operation := range surface.Operations {
 				op := operation

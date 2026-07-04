@@ -1,10 +1,13 @@
 package ai
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/godeps/gonacos/pkg/ai/mcpclient"
 )
 
 // McpServer is the Nacos-compatible MCP server representation. Concurrency
@@ -155,29 +158,97 @@ func (s *Service) DeleteMcpServer(id string) error {
 	return nil
 }
 
-// ImportToolsFromMcp fetches tools from a remote MCP server. Without a live
-// remote MCP client this returns the locally-registered tools for the server.
+// ImportToolsFromMcp fetches tools from a remote MCP server. If the server has
+// an endpoint configured, this dials the server via streamable HTTP and lists
+// its tools. If the dial fails or the endpoint is empty, this falls back to
+// returning the locally-registered tools.
 func (s *Service) ImportToolsFromMcp(id string) ([]McpTool, error) {
 	srv, err := s.GetMcpServer(id)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]McpTool, len(srv.Tools))
-	copy(out, srv.Tools)
+	if strings.TrimSpace(srv.Endpoint) == "" {
+		out := make([]McpTool, len(srv.Tools))
+		copy(out, srv.Tools)
+		return out, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	client, err := mcpclient.Dial(ctx, srv.Endpoint, mcpclient.DialOptions{
+		Headers: s.mcpHeaders(srv),
+	})
+	if err != nil {
+		// Fall back to local tools on dial failure.
+		out := make([]McpTool, len(srv.Tools))
+		copy(out, srv.Tools)
+		return out, nil
+	}
+	defer client.Close()
+	remote, err := client.ListTools(ctx)
+	if err != nil {
+		out := make([]McpTool, len(srv.Tools))
+		copy(out, srv.Tools)
+		return out, nil
+	}
+	out := make([]McpTool, 0, len(remote))
+	for _, t := range remote {
+		tool := McpTool{
+			Name:        t.Name,
+			Description: t.Description,
+		}
+		if schema, ok := t.InputSchema.(map[string]any); ok {
+			tool.InputSchema = schema
+		}
+		out = append(out, tool)
+	}
 	return out, nil
 }
 
-// ValidateMcpImport checks that an MCP server URL and credentials are usable.
-// Without a remote client, this returns nil for any non-empty URL.
+// ValidateMcpImport dials the remote MCP server and runs an Initialize round-trip.
+// Returns nil if the server is reachable and the protocol handshake succeeds.
 func (s *Service) ValidateMcpImport(url string) error {
 	if strings.TrimSpace(url) == "" {
 		return errors.New("url is required")
 	}
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	client, err := mcpclient.Dial(ctx, url, mcpclient.DialOptions{})
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	_, err = client.ListTools(ctx)
+	return err
 }
 
-// ExecuteMcpImport imports tools from a remote MCP server. Without a remote
-// client, this is a no-op and returns the existing tools.
+// ExecuteMcpImport imports tools from a remote MCP server and persists them
+// on the local McpServer entry.
 func (s *Service) ExecuteMcpImport(id string) ([]McpTool, error) {
-	return s.ImportToolsFromMcp(id)
+	tools, err := s.ImportToolsFromMcp(id)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.UpdateMcpServer(McpServer{ID: id, Tools: tools})
+	if err != nil {
+		return nil, err
+	}
+	return tools, nil
+}
+
+// mcpHeaders extracts MCP-related HTTP headers from the server's metadata.
+// Keys with the "header:" prefix are forwarded as HTTP headers.
+func (s *Service) mcpHeaders(srv *McpServer) map[string]string {
+	if srv.Metadata == nil {
+		return nil
+	}
+	headers := map[string]string{}
+	for k, v := range srv.Metadata {
+		if strings.HasPrefix(k, "header:") {
+			headers[strings.TrimPrefix(k, "header:")] = v
+		}
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+	return headers
 }

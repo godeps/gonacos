@@ -31,6 +31,11 @@ func registerAIRoutes(register func(string, string, http.HandlerFunc), service *
 	registerMcpRoutes(register, admin, console)
 	registerCopilotRoutes(register, console)
 	registerClientAIRoutes(register, client)
+	registerMcpRouterRoutes(register, admin)
+	registerApitomcpRoutes(register, admin, console)
+	registerTemplateRoutes(register, admin, console)
+	registerDifyRoutes(register, admin)
+	registerPluginRoutes(register, admin)
 }
 
 func registerPromptRoutes(register func(string, string, http.HandlerFunc), h aiHandler) {
@@ -151,6 +156,9 @@ func registerPipelineRoutes(register func(string, string, http.HandlerFunc), h a
 		register(http.MethodGet, base+"/detail", h.pipelineDetail)
 		register(http.MethodGet, base+"/{pipelineId}", h.pipelineGet)
 	}
+	register(http.MethodPost, "/v3/admin/ai/pipelines/create", h.pipelineCreate)
+	register(http.MethodPut, "/v3/admin/ai/pipelines/update", h.pipelineUpdate)
+	register(http.MethodDelete, "/v3/admin/ai/pipelines/delete", h.pipelineDelete)
 }
 
 func registerCopilotRoutes(register func(string, string, http.HandlerFunc), h aiHandler) {
@@ -1314,6 +1322,49 @@ func (h aiHandler) pipelineGet(w http.ResponseWriter, r *http.Request) {
 	protocol.WriteResult(w, http.StatusOK, p)
 }
 
+func (h aiHandler) pipelineCreate(w http.ResponseWriter, r *http.Request) {
+	if !parseForm(w, r) {
+		return
+	}
+	p, err := h.service.CreatePipeline(ai.Pipeline{
+		ID:          formValue(r, "pipelineId"),
+		Name:        formValue(r, "name"),
+		Description: formValue(r, "description"),
+	})
+	if err != nil {
+		writeAIError(w, err)
+		return
+	}
+	protocol.WriteResult(w, http.StatusOK, p)
+}
+
+func (h aiHandler) pipelineUpdate(w http.ResponseWriter, r *http.Request) {
+	if !parseForm(w, r) {
+		return
+	}
+	p, err := h.service.UpdatePipeline(ai.Pipeline{
+		ID:          formValue(r, "pipelineId"),
+		Name:        formValue(r, "name"),
+		Description: formValue(r, "description"),
+	})
+	if err != nil {
+		writeAIError(w, err)
+		return
+	}
+	protocol.WriteResult(w, http.StatusOK, p)
+}
+
+func (h aiHandler) pipelineDelete(w http.ResponseWriter, r *http.Request) {
+	if !parseForm(w, r) {
+		return
+	}
+	if err := h.service.DeletePipeline(formValue(r, "pipelineId")); err != nil {
+		writeAIError(w, err)
+		return
+	}
+	protocol.WriteResult(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 // --- Copilot handlers ---
 
 func (h aiHandler) copilotConfigGet(w http.ResponseWriter, r *http.Request) {
@@ -1557,16 +1608,27 @@ func writeAIError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ai.ErrMissingID),
 		errors.Is(err, ai.ErrMissingName),
 		errors.Is(err, ai.ErrMissingVersion),
-		errors.Is(err, ai.ErrMissingContent):
+		errors.Is(err, ai.ErrMissingContent),
+		errors.Is(err, ai.ErrApitomcpConfigNameRequired),
+		errors.Is(err, ai.ErrApitomcpYAMLRequired),
+		errors.Is(err, ai.ErrTemplateIDRequired),
+		errors.Is(err, ai.ErrTemplateBodyRequired):
 		code = protocol.CodeParameterMissing
 	case errors.Is(err, ai.ErrResourceNotFound),
 		errors.Is(err, ai.ErrVersionNotFound),
-		errors.Is(err, ai.ErrDraftNotFound):
+		errors.Is(err, ai.ErrDraftNotFound),
+		errors.Is(err, ai.ErrApitomcpConfigNotFound),
+		errors.Is(err, ai.ErrTemplateNotFound):
 		status = http.StatusNotFound
 		code = protocol.CodeNotFound
 	case errors.Is(err, ai.ErrResourceExists),
 		errors.Is(err, ai.ErrDraftExists),
-		errors.Is(err, ai.ErrInvalidState):
+		errors.Is(err, ai.ErrInvalidState),
+		errors.Is(err, ai.ErrApitomcpConfigExists),
+		errors.Is(err, ai.ErrTemplateExists),
+		errors.Is(err, ai.ErrTemplateBuiltinID),
+		errors.Is(err, ai.ErrTemplateBuiltinImmutable),
+		errors.Is(err, ai.ErrApitomcpNameMismatch):
 		code = protocol.CodeConflict
 	case errors.Is(err, ai.ErrLLMDisabled):
 		status = http.StatusServiceUnavailable

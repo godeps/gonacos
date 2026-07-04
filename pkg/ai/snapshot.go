@@ -3,6 +3,9 @@ package ai
 import (
 	"sort"
 	"time"
+
+	"github.com/godeps/gonacos/pkg/ai/apitomcp"
+	"github.com/godeps/gonacos/pkg/ai/mcptemplate"
 )
 
 // aiResourceSnap captures a resource with draft and version content included
@@ -50,12 +53,14 @@ type aiVersionSnap struct {
 }
 
 type aiSnapshot struct {
-	Prompts   []aiResourceSnap `json:"prompts"`
-	Skills    []aiResourceSnap `json:"skills"`
-	Specs     []aiResourceSnap `json:"specs"`
-	Mcp       []McpServer      `json:"mcp"`
-	A2A       []A2AAgent       `json:"a2a"`
-	Pipelines []Pipeline       `json:"pipelines"`
+	Prompts    []aiResourceSnap    `json:"prompts"`
+	Skills     []aiResourceSnap    `json:"skills"`
+	Specs      []aiResourceSnap    `json:"specs"`
+	Mcp        []McpServer         `json:"mcp"`
+	A2A        []A2AAgent          `json:"a2a"`
+	Pipelines  []Pipeline          `json:"pipelines"`
+	Apitomcp   []ApitomcpConfig    `json:"apitomcp,omitempty"`
+	Templates  []mcptemplate.Template `json:"templates,omitempty"`
 }
 
 // SnapshotKey identifies the AI service in backup envelopes.
@@ -80,7 +85,9 @@ func (s *Service) Snapshot() (any, error) {
 		Specs:     snapshotResources(s.specs),
 		Mcp:       mcpServers,
 		A2A:       a2aAgents,
-		Pipelines: append([]Pipeline(nil), s.pipelines...),
+		Pipelines: pipelineListToValues(s.pipelines.list()),
+		Apitomcp:  apitomcpListToValues(s.apitomcp.list()),
+		Templates: templateListToValues(s.templates.list()),
 	}
 	sort.Slice(snap.Mcp, func(i, j int) bool { return snap.Mcp[i].ID < snap.Mcp[j].ID })
 	sort.Slice(snap.A2A, func(i, j int) bool { return snap.A2A[i].ID < snap.A2A[j].ID })
@@ -182,6 +189,14 @@ func (s *Service) Restore(data any) error {
 	if err != nil {
 		return err
 	}
+	apitomcpCfgs, err := decodeApitomcpConfigs(snap["apitomcp"])
+	if err != nil {
+		return err
+	}
+	userTemplates, err := decodeUserTemplates(snap["templates"])
+	if err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	restoreResources(s.prompts, prompts)
@@ -202,9 +217,120 @@ func (s *Service) Restore(data any) error {
 	}
 	s.a2a.mu.Unlock()
 	if pipelines != nil {
-		s.pipelines = pipelines
+		s.pipelines.replace(pipelines)
+	}
+	if apitomcpCfgs != nil {
+		s.apitomcp.replace(apitomcpCfgs)
+		// Remount backends on the router (if attached).
+		for _, cfg := range apitomcpCfgs {
+			conv := apitomcp.NewConverter()
+			if parsed, err := conv.LoadYAML([]byte(cfg.YAML)); err == nil {
+				s.mountApitomcpBackend(parsed)
+			}
+		}
+	}
+	if userTemplates != nil {
+		s.templates.replace(userTemplates)
 	}
 	return nil
+}
+
+func pipelineListToValues(list []*Pipeline) []Pipeline {
+	out := make([]Pipeline, len(list))
+	for i, p := range list {
+		out[i] = *p
+	}
+	return out
+}
+
+func apitomcpListToValues(list []*ApitomcpConfig) []ApitomcpConfig {
+	out := make([]ApitomcpConfig, len(list))
+	for i, c := range list {
+		out[i] = *c
+	}
+	return out
+}
+
+func templateListToValues(list []*UserTemplate) []mcptemplate.Template {
+	out := make([]mcptemplate.Template, len(list))
+	for i, t := range list {
+		out[i] = t.Template
+	}
+	return out
+}
+
+func decodeApitomcpConfigs(raw any) ([]ApitomcpConfig, error) {
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, nil
+	}
+	out := make([]ApitomcpConfig, 0, len(items))
+	for _, entry := range items {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			return nil, errAISnapshotShape
+		}
+		cfg := ApitomcpConfig{
+			Name:        getString(m, "name"),
+			Description: getString(m, "description"),
+			YAML:        getString(m, "yaml"),
+			ServerName:  getString(m, "serverName"),
+			ToolCount:   int(getInt64(m, "toolCount")),
+		}
+		if ts := getInt64(m, "createdAt"); ts > 0 {
+			cfg.CreatedAt = time.UnixMilli(ts)
+		}
+		if ts := getInt64(m, "updatedAt"); ts > 0 {
+			cfg.UpdatedAt = time.UnixMilli(ts)
+		}
+		out = append(out, cfg)
+	}
+	return out, nil
+}
+
+func decodeUserTemplates(raw any) ([]UserTemplate, error) {
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, nil
+	}
+	out := make([]UserTemplate, 0, len(items))
+	for _, entry := range items {
+		m, ok := entry.(map[string]any)
+		if !ok {
+			return nil, errAISnapshotShape
+		}
+		t := UserTemplate{
+			Template: mcptemplate.Template{
+				ID:          getString(m, "id"),
+				Name:        getString(m, "name"),
+				Description: getString(m, "description"),
+				Category:    getString(m, "category"),
+				Body:        getString(m, "body"),
+			},
+		}
+		if ts := getInt64(m, "createdAt"); ts > 0 {
+			t.CreatedAt = time.UnixMilli(ts)
+		}
+		if ts := getInt64(m, "updatedAt"); ts > 0 {
+			t.UpdatedAt = time.UnixMilli(ts)
+		}
+		if vars, ok := m["variables"].([]any); ok {
+			for _, v := range vars {
+				vm, ok := v.(map[string]any)
+				if !ok {
+					continue
+				}
+				t.Variables = append(t.Variables, mcptemplate.Variable{
+					Name:        getString(vm, "name"),
+					Description: getString(vm, "description"),
+					Default:     getString(vm, "default"),
+					Required:    getBool(vm, "required"),
+				})
+			}
+		}
+		out = append(out, t)
+	}
+	return out, nil
 }
 
 func restoreResources(store *resourceStore, list []aiResourceSnap) {
@@ -535,6 +661,13 @@ func getInt64(m map[string]any, key string) int64 {
 		return v
 	}
 	return 0
+}
+
+func getBool(m map[string]any, key string) bool {
+	if v, ok := m[key].(bool); ok {
+		return v
+	}
+	return false
 }
 
 var errAISnapshotShape = snapshotShapeError("ai snapshot shape mismatch")

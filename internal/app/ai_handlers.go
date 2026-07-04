@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/saker-ai/gonacos/internal/ai"
-	"github.com/saker-ai/gonacos/internal/protocol"
+	"github.com/godeps/gonacos/internal/ai"
+	"github.com/godeps/gonacos/internal/protocol"
 )
 
 type aiHandler struct {

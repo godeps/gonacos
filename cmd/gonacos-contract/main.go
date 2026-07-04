@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/saker-ai/gonacos/internal/contract"
+	"github.com/godeps/gonacos/internal/contract"
 )
 
 func main() {

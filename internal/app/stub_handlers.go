@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"strconv"
 
-	aivsvc "github.com/saker-ai/gonacos/internal/ai"
-	clustersvc "github.com/saker-ai/gonacos/internal/cluster"
-	configsvc "github.com/saker-ai/gonacos/internal/config"
-	namingsvc "github.com/saker-ai/gonacos/internal/naming"
-	"github.com/saker-ai/gonacos/internal/protocol"
+	aivsvc "github.com/godeps/gonacos/internal/ai"
+	clustersvc "github.com/godeps/gonacos/internal/cluster"
+	configsvc "github.com/godeps/gonacos/internal/config"
+	namingsvc "github.com/godeps/gonacos/internal/naming"
+	"github.com/godeps/gonacos/internal/protocol"
 )
 
 // stubHandler bundles the service references needed by the remaining

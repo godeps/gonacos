@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	authsvc "github.com/saker-ai/gonacos/internal/auth"
-	"github.com/saker-ai/gonacos/internal/protocol"
+	authsvc "github.com/godeps/gonacos/internal/auth"
+	"github.com/godeps/gonacos/internal/protocol"
 )
 
 // newAuthTestServices creates a fresh auth service with the default admin

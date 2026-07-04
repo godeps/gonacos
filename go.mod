@@ -1,4 +1,4 @@
-module github.com/saker-ai/gonacos
+module github.com/godeps/gonacos
 
 go 1.26.4
 

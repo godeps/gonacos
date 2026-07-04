@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	grpcsrv "github.com/saker-ai/gonacos/internal/protocol/grpc"
+	grpcsrv "github.com/godeps/gonacos/internal/protocol/grpc"
 )
 
 // TestGRPCConfigBatchListen verifies the gRPC ConfigBatchListenRequest

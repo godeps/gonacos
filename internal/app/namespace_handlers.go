@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/saker-ai/gonacos/internal/namespace"
-	"github.com/saker-ai/gonacos/internal/protocol"
+	"github.com/godeps/gonacos/internal/namespace"
+	"github.com/godeps/gonacos/internal/protocol"
 )
 
 type namespaceHandler struct {

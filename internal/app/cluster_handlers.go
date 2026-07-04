@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/saker-ai/gonacos/internal/cluster"
-	"github.com/saker-ai/gonacos/internal/protocol"
+	"github.com/godeps/gonacos/internal/cluster"
+	"github.com/godeps/gonacos/internal/protocol"
 )
 
 type clusterHandler struct {

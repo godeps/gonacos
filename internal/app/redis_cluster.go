@@ -7,9 +7,9 @@ import (
 	"strconv"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/saker-ai/gonacos/internal/cluster"
-	configsvc "github.com/saker-ai/gonacos/internal/config"
-	namingsvc "github.com/saker-ai/gonacos/internal/naming"
+	"github.com/godeps/gonacos/internal/cluster"
+	configsvc "github.com/godeps/gonacos/internal/config"
+	namingsvc "github.com/godeps/gonacos/internal/naming"
 )
 
 // redisAddrFromEnv returns the Redis address from the GONACOS_REDIS_ADDR env

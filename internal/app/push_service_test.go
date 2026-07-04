@@ -4,9 +4,9 @@ import (
 	"sync"
 	"testing"
 
-	configsvc "github.com/saker-ai/gonacos/internal/config"
-	namingsvc "github.com/saker-ai/gonacos/internal/naming"
-	"github.com/saker-ai/gonacos/internal/protocol/grpc"
+	configsvc "github.com/godeps/gonacos/internal/config"
+	namingsvc "github.com/godeps/gonacos/internal/naming"
+	"github.com/godeps/gonacos/internal/protocol/grpc"
 )
 
 // TestPushService_ConfigPush verifies that a config change triggers a

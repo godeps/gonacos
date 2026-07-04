@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	configsvc "github.com/saker-ai/gonacos/internal/config"
-	"github.com/saker-ai/gonacos/internal/protocol"
+	configsvc "github.com/godeps/gonacos/internal/config"
+	"github.com/godeps/gonacos/internal/protocol"
 )
 
 type configHandler struct {

@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/saker-ai/gonacos/internal/naming"
-	"github.com/saker-ai/gonacos/internal/protocol"
+	"github.com/godeps/gonacos/internal/naming"
+	"github.com/godeps/gonacos/internal/protocol"
 )
 
 type namingHandler struct {

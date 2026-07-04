@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	authsvc "github.com/saker-ai/gonacos/internal/auth"
-	"github.com/saker-ai/gonacos/internal/protocol"
+	authsvc "github.com/godeps/gonacos/internal/auth"
+	"github.com/godeps/gonacos/internal/protocol"
 )
 
 type claimsKey struct{}

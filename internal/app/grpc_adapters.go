@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/saker-ai/gonacos/internal/ai"
-	configsvc "github.com/saker-ai/gonacos/internal/config"
-	"github.com/saker-ai/gonacos/internal/naming"
-	grpcsrv "github.com/saker-ai/gonacos/internal/protocol/grpc"
+	"github.com/godeps/gonacos/internal/ai"
+	configsvc "github.com/godeps/gonacos/internal/config"
+	"github.com/godeps/gonacos/internal/naming"
+	grpcsrv "github.com/godeps/gonacos/internal/protocol/grpc"
 )
 
 // sdkInstanceRequest mirrors the JSON the nacos-sdk-go v2 sends in an

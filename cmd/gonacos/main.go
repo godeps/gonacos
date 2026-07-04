@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/saker-ai/gonacos/internal/app"
+	"github.com/godeps/gonacos/internal/app"
 )
 
 func main() {

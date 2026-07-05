@@ -15,6 +15,7 @@ import (
 	"github.com/godeps/gonacos/pkg/observability"
 	grpcsrv "github.com/godeps/gonacos/pkg/protocol/grpc"
 	"github.com/godeps/gonacos/pkg/store"
+	"github.com/godeps/gonacos/pkg/version"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -112,6 +113,10 @@ func New(opts ...Option) (*Server, error) {
 
 	push := app.NewPushService(grpcsrv.NewConnectionRegistry(), bundle.Config, bundle.Naming)
 	registry := observability.NewRegistry()
+	// Publish the binary's build identity as a Prometheus gauge so operators
+	// can query `gonacos_build_info` to see which version/commit is deployed
+	// across a fleet, alert on version drift, and verify rollouts landed.
+	registry.RegisterBuildInfo(version.Version, version.Commit, version.BuildDate)
 	if push != nil {
 		push.SetMetricsRegistry(registry)
 		push.InstallCallbacks()

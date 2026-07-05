@@ -213,6 +213,28 @@ func (r *Registry) RegisterProcessMetrics() func() {
 	return refresh
 }
 
+// RegisterBuildInfo publishes a constant-1 gauge carrying the binary's
+// version, commit, and build date as labels. Standard Prometheus convention:
+//
+//	gonacos_build_info{version="1.0.0",commit="abc123",build_date="2026-07-05T..."} 1
+//
+// Operators query `gonacos_build_info` to discover which version is deployed
+// across a fleet, and alert on version drift (different versions on different
+// nodes) or missing deployments (a version that should be rolled out but
+// isn't). The value is always 1 — the information lives in the labels.
+//
+// Empty strings are accepted so a development build (defaults) still exposes
+// the metric; operators see build_date="unknown" and know ldflags were not
+// injected.
+func (r *Registry) RegisterBuildInfo(version, commit, buildDate string) {
+	g := r.Gauge("gonacos_build_info", map[string]string{
+		"version":    version,
+		"commit":     commit,
+		"build_date": buildDate,
+	})
+	g.Set(1)
+}
+
 func metricKey(name string, labels map[string]string) string {
 	if len(labels) == 0 {
 		return name

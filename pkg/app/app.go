@@ -18,10 +18,19 @@ import (
 	"github.com/godeps/gonacos/pkg/protocol"
 	grpcsrv "github.com/godeps/gonacos/pkg/protocol/grpc"
 	"github.com/godeps/gonacos/pkg/store"
+	"github.com/godeps/gonacos/pkg/version"
 	"github.com/godeps/gonacos/pkg/web"
 )
 
-const Version = "0.1.0-dev"
+// Version is the human-readable release version. Build with -ldflags to
+// override at release time:
+//
+//	go build -ldflags "-X github.com/godeps/gonacos/pkg/version.Version=1.0.0" \
+//	  ./cmd/gonacos
+//
+// Deprecated: prefer [version.Version]. This alias is kept for callers that
+// reference app.Version directly.
+var Version = version.Version
 
 // ServiceBundle groups the shared service instances used by both the HTTP
 // handler and the gRPC server so they see the same in-memory state. External

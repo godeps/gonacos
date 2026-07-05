@@ -311,7 +311,7 @@ The following metrics are always present:
 | `gonacos_namespaces_total` | gauge | Number of namespaces |
 | `gonacos_configs_total` | gauge | Total config items across all namespaces |
 | `gonacos_services_total` | gauge | Total registered services across all namespaces |
-| `gonacos_instances_total` | gauge | Total service instances across all services (currently 0 — placeholder for future instance-count tracking) |
+| `gonacos_instances_total` | gauge | Total service instances across all services |
 | `gonacos_users_total` | gauge | Number of registered users |
 | `gonacos_push_total{type="config"}` | counter | Config change notifications pushed to subscribers |
 | `gonacos_push_total{type="service"}` | counter | Service change notifications pushed to subscribers |

@@ -303,6 +303,30 @@ func (s *Service) GetService(namespaceID, groupName, serviceName string) (Servic
 
 // ListServices returns a paginated snapshot of services that match the
 // namespace and optional group/service name filter substrings.
+// CountAllInstances returns the total number of instances across all
+// namespaces, groups, and services. O(services) — each serviceEntry's
+// instance map is a len() call, no per-instance work. Used by the
+// resource-count metrics collector to expose gonacos_instances_total.
+func (s *Service) CountAllInstances() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	total := 0
+	for _, entry := range s.services {
+		total += len(entry.instances)
+	}
+	return total
+}
+
+// CountAllServices returns the total number of registered services across
+// all namespaces. O(services). Used by the resource-count metrics collector
+// to avoid the per-namespace ListServices sweep when only the total is
+// needed.
+func (s *Service) CountAllServices() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.services)
+}
+
 func (s *Service) ListServices(namespaceID, groupNameParam, serviceNameParam string, pageNo, pageSize int, ignoreEmpty, withInstances bool) (ServicePage, error) {
 	namespaceID = trim(namespaceID)
 	if pageNo <= 0 {

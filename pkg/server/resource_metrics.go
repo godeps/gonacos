@@ -57,17 +57,10 @@ func startResourceCollector(registry *observability.Registry, bundle *app.Servic
 		}
 		gauges.configs.Set(configs)
 
-		// Services: sum Count across all namespaces.
-		var services, instances int64
-		for _, ns := range namespaces {
-			sp, err := bundle.Naming.ListServices(ns.Namespace, "", "", 1, 1, true, false)
-			if err != nil {
-				continue
-			}
-			services += int64(sp.Count)
-		}
-		gauges.services.Set(services)
-		gauges.instances.Set(instances)
+		// Services and instances: O(services) on the naming store, no
+		// per-namespace sweep needed.
+		gauges.services.Set(int64(bundle.Naming.CountAllServices()))
+		gauges.instances.Set(int64(bundle.Naming.CountAllInstances()))
 
 		// Users: TotalCount from a size-1 page query.
 		up, err := bundle.Auth.ListUsers(1, 1, "", "")

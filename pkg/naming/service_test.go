@@ -415,3 +415,44 @@ func TestFormatMetadataRoundtrip(t *testing.T) {
 		t.Fatalf("roundtrip: %v", parsed)
 	}
 }
+
+func TestCountAllInstancesAndServices(t *testing.T) {
+	t.Parallel()
+	s := newTestService(t)
+
+	// Empty: zero counts.
+	if got := s.CountAllInstances(); got != 0 {
+		t.Fatalf("CountAllInstances empty = %d, want 0", got)
+	}
+	if got := s.CountAllServices(); got != 0 {
+		t.Fatalf("CountAllServices empty = %d, want 0", got)
+	}
+
+	// Register 3 instances across 2 services.
+	for _, svc := range []string{"svc1", "svc2"} {
+		for i := 0; i < 2; i++ {
+			inst := Instance{
+				NamespaceID: "ns",
+				GroupName:   "g",
+				ServiceName: svc,
+				ClusterName: "DEFAULT",
+				IP:          "10.0.0." + string(rune('1'+i)),
+				Port:        8080,
+				Weight:      1,
+				Healthy:     true,
+				Enabled:     true,
+				Ephemeral:   true,
+			}
+			if _, err := s.RegisterInstance(inst); err != nil {
+				t.Fatalf("register %s/%d: %v", svc, i, err)
+			}
+		}
+	}
+
+	if got := s.CountAllServices(); got != 2 {
+		t.Fatalf("CountAllServices = %d, want 2", got)
+	}
+	if got := s.CountAllInstances(); got != 4 {
+		t.Fatalf("CountAllInstances = %d, want 4", got)
+	}
+}

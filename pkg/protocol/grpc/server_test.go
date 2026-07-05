@@ -3,11 +3,33 @@ package grpc
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+// threadSafeBuffer is a bytes.Buffer protected by a mutex so concurrent
+// goroutines (the test main goroutine + the HTTP handler goroutine) can
+// safely write and read it.
+type threadSafeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *threadSafeBuffer) WriteString(s string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.WriteString(s)
+}
+
+func (b *threadSafeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
 
 func TestServerStartsAndRespondsToUnknownPath(t *testing.T) {
 	t.Parallel()
@@ -139,10 +161,10 @@ func TestServerUnaryHandlerReturnsErrorStatus(t *testing.T) {
 func TestServerUnaryHandlerPanicReturnsInternal(t *testing.T) {
 	t.Parallel()
 	srv := NewServer()
-	var logBuf bytes.Buffer
+	var logBuf threadSafeBuffer
 	srv.Logf = func(format string, args ...any) {
-		logBuf.WriteString(format)
-		logBuf.WriteByte('\n')
+		logBuf.WriteString(fmt.Sprintf(format, args...))
+		logBuf.WriteString("\n")
 	}
 	srv.RegisterUnary("Request/request", func(ctx context.Context, req Payload) (Payload, error) {
 		panic("boom")
@@ -173,6 +195,54 @@ func TestServerUnaryHandlerPanicReturnsInternal(t *testing.T) {
 	}
 	if !strings.Contains(logBuf.String(), "grpc panic recovered") {
 		t.Errorf("log missing 'grpc panic recovered': %s", logBuf.String())
+	}
+}
+
+func TestServerAccessLogEmittedOnUnaryCall(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	var logBuf threadSafeBuffer
+	srv.Logf = func(format string, args ...any) {
+		logBuf.WriteString(fmt.Sprintf(format, args...))
+		logBuf.WriteString("\n")
+	}
+	srv.RegisterUnary("Request/request", func(ctx context.Context, req Payload) (Payload, error) {
+		return Payload{Metadata: Metadata{Type: "TestResponse"}}, nil
+	})
+	go func() { _ = srv.ListenAndServe("127.0.0.1:0") }()
+	for i := 0; i < 50 && srv.Addr() == nil; i++ {
+		time.Sleep(2 * time.Millisecond)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	req := Payload{Metadata: Metadata{Type: "TestRequest"}}
+	body := encodeGRPCRequestBody(req)
+	resp, err := http.Post(
+		"http://"+srv.Addr().String()+"/Request/request",
+		"application/grpc",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+
+	logged := logBuf.String()
+	if !strings.Contains(logged, "grpc POST /Request/request") {
+		t.Errorf("access log missing method/path: %s", logged)
+	}
+	if !strings.Contains(logged, "status=0") {
+		t.Errorf("access log missing status=0 (OK): %s", logged)
+	}
+	if !strings.Contains(logged, "duration=") {
+		t.Errorf("access log missing duration: %s", logged)
+	}
+	if !strings.Contains(logged, "remote=") {
+		t.Errorf("access log missing remote: %s", logged)
 	}
 }
 

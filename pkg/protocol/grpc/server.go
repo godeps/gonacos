@@ -197,7 +197,8 @@ func ClientIPFromContext(ctx context.Context) string {
 }
 
 // ServeHTTP routes the incoming HTTP/2 request to the registered handler.
-// The path format is /{Service}/{Method}.
+// The path format is /{Service}/{Method}. When Logf is set, each request is
+// logged with method, path, grpc-status, duration, and remote address.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -231,6 +232,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	ctx := context.WithValue(r.Context(), clientIPKey{}, clientIPFromRequest(r))
 
+	start := time.Now()
 	switch {
 	case hasUnary:
 		s.handleUnary(ctx, w, r, unary)
@@ -238,6 +240,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleStream(ctx, w, r, stream)
 	case hasBi:
 		s.handleBiStream(ctx, w, r, bistream)
+	}
+	if s.Logf != nil {
+		status := w.Header().Get("grpc-status")
+		if status == "" {
+			status = "?"
+		}
+		s.Logf("grpc %s %s status=%s duration=%s remote=%s",
+			r.Method, r.URL.Path, status, formatGRPCDuration(time.Since(start)), r.RemoteAddr)
+	}
+}
+
+// formatGRPCDuration trims sub-millisecond noise for log readability, matching
+// the HTTP access log format in pkg/server/request_log.go.
+func formatGRPCDuration(d time.Duration) string {
+	switch {
+	case d < time.Microsecond:
+		return strconv.Itoa(int(d.Nanoseconds())) + "ns"
+	case d < time.Millisecond:
+		return fmt.Sprintf("%.1fµs", float64(d.Nanoseconds())/1000)
+	case d < time.Second:
+		return fmt.Sprintf("%.1fms", float64(d.Microseconds())/1000)
+	default:
+		return fmt.Sprintf("%.3fs", d.Seconds())
 	}
 }
 

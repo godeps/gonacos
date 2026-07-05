@@ -77,6 +77,14 @@ type options struct {
 	// default INFO). Only affects the default logger; a custom [Logger]
 	// passed via [WithLogger] is responsible for its own filtering.
 	LogLevel *LogLevel
+
+	// MetricsToken, when non-empty, requires scrapers to present it as a
+	// Bearer token (Authorization: Bearer <token>) on the /metrics endpoint.
+	// When empty (default), /metrics is publicly accessible — appropriate
+	// for development or when the network layer already restricts access.
+	// Production deployments should set a token to avoid leaking process
+	// and business metrics to unauthenticated callers.
+	MetricsToken string
 }
 
 // Option configures a Server at construction time. Pass to [New].
@@ -271,6 +279,17 @@ func WithMaxConns(max int) Option {
 func WithLogLevel(level LogLevel) Option {
 	l := level
 	return func(o *options) { o.LogLevel = &l }
+}
+
+// WithMetricsToken requires scrapers to present the given Bearer token on
+// the /metrics endpoint. When unset (default), /metrics is publicly
+// accessible. Production deployments should set a token to prevent
+// unauthenticated callers from scraping process and business metrics.
+// The token is compared in constant time, so timing attacks cannot
+// recover it. Scrapers must send `Authorization: Bearer <token>`.
+// Falls back to the GONACOS_METRICS_TOKEN env var.
+func WithMetricsToken(token string) Option {
+	return func(o *options) { o.MetricsToken = token }
 }
 
 func (o *options) resolveAddr() string {
@@ -566,6 +585,17 @@ func (o *options) resolveLogLevel() LogLevel {
 		return *o.LogLevel
 	}
 	return ParseLogLevel(os.Getenv("GONACOS_LOG_LEVEL"))
+}
+
+// resolveMetricsToken returns the Bearer token required to scrape /metrics.
+// Returns the explicitly configured token when set, otherwise the
+// GONACOS_METRICS_TOKEN env var, otherwise empty (public scrape). The token
+// is compared in constant time on every request.
+func (o *options) resolveMetricsToken() string {
+	if o.MetricsToken != "" {
+		return o.MetricsToken
+	}
+	return os.Getenv("GONACOS_METRICS_TOKEN")
 }
 
 // splitHostPort splits an address into host and port. Returns "127.0.0.1" and

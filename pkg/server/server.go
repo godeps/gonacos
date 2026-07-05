@@ -192,7 +192,7 @@ func New(opts ...Option) (*Server, error) {
 		grpcLn = newMaxConnsListener(grpcLn, maxConns)
 	}
 
-	httpHandler := app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry, readiness, o.buildLoginThrottle())
+	httpHandler := app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry, readiness, o.buildLoginThrottle(), o.resolveMetricsToken())
 
 	// Recovery wraps the innermost handler so panics produce a 500 JSON
 	// response with the request ID instead of crashing the connection.

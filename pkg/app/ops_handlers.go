@@ -1,10 +1,12 @@
 package app
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"net/http/pprof"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/godeps/gonacos/pkg/observability"
@@ -53,12 +55,48 @@ func registerOpsRoutes(
 // Prometheus scrape path. Unlike /v3/admin/ops/metrics (which goes through
 // `register` and gets a /nacos-prefixed twin), /metrics is registered raw so
 // Prometheus can scrape it with the default job config.
-func RegisterPublicMetrics(mux *http.ServeMux, registry *observability.Registry) {
+//
+// When metricsToken is non-empty, the endpoint requires a Bearer token
+// matching it (Authorization: Bearer <token>). A request without a valid
+// token receives 401. When metricsToken is empty, the endpoint is publicly
+// accessible — appropriate for development or when the network layer
+// already restricts access (e.g., firewall rules, mTLS). Production
+// deployments should set a token to avoid leaking process and business
+// metrics to unauthenticated callers.
+func RegisterPublicMetrics(mux *http.ServeMux, registry *observability.Registry, metricsToken string) {
 	if registry == nil {
 		return
 	}
 	h := opsHandler{registry: registry, refresh: registry.RegisterProcessMetrics()}
-	mux.HandleFunc("/metrics", h.metrics)
+	var handler http.Handler = http.HandlerFunc(h.metrics)
+	if metricsToken != "" {
+		handler = newMetricsTokenMiddleware(metricsToken, handler)
+	}
+	mux.Handle("/metrics", handler)
+}
+
+// newMetricsTokenMiddleware guards the wrapped handler with a Bearer token
+// check. The token comparison uses constant time to prevent timing attacks.
+// A missing or malformed Authorization header returns 401 with a
+// WWW-Authenticate challenge so scrapers configured with a token retry
+// cleanly.
+func newMetricsTokenMiddleware(token string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		const prefix = "Bearer "
+		if !strings.HasPrefix(auth, prefix) {
+			w.Header().Set("WWW-Authenticate", "Bearer realm=\"gonacos metrics\"")
+			http.Error(w, "metrics endpoint requires a Bearer token", http.StatusUnauthorized)
+			return
+		}
+		provided := strings.TrimPrefix(auth, prefix)
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+			w.Header().Set("WWW-Authenticate", "Bearer realm=\"gonacos metrics\"")
+			http.Error(w, "invalid metrics token", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (h opsHandler) metrics(w http.ResponseWriter, r *http.Request) {

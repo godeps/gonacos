@@ -52,6 +52,66 @@ configs per namespace by default). HTTP-level limits protect against abuse:
 Operators running in production should monitor memory via the `/metrics`
 endpoint and restart the process if heap usage approaches the cgroup limit.
 
+## Security hardening
+
+### Security response headers
+
+Every HTTP response carries standard security headers that protect the
+embedded React console and the JSON API from common client-side attacks:
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `X-Content-Type-Options` | `nosniff` | Blocks MIME sniffing |
+| `X-Frame-Options` | `SAMEORIGIN` | Clickjacking protection |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Limits referrer leakage |
+| `X-XSS-Protection` | `0` | Disables buggy legacy XSS auditor |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | HSTS (only under TLS) |
+
+Headers are set by the outermost middleware so they appear on every
+response — including 429s from rate limiting, 413s from body caps, 500s
+from panic recovery, and 404s from the catch-all. Inner handlers can
+override any header per-route.
+
+### Login brute-force protection
+
+The `/v3/auth/user/login` endpoint is wrapped with a per-(client-IP,
+username) lockout policy. After `maxFailures` consecutive failed logins
+within `failWindow`, the pair is locked for `lockoutDuration`; a successful
+login resets the counter. Recommended production: 5 failures, 5m window,
+15m lockout.
+
+Configure via the `WithLoginThrottle(maxFailures, failWindow, lockoutDuration)`
+option when embedding, or run `gonacos serve` with the appropriate flags.
+Disabled by default — set `maxFailures > 0` to enable.
+
+A locked pair receives `429 Too Many Requests` with a `Retry-After` header
+without calling the login handler, so an attacker cannot probe passwords
+even if the underlying auth service is slow.
+
+### Request tracing
+
+Every response carries an `X-Request-Id` header (e.g.
+`gonacos-1m0abc23-000042`). The ID is generated from an atomic counter +
+process start time (no crypto dependency on the hot path) and is logged
+in the access log line, so an operator receiving a report can correlate
+a specific response to its log entry by the request ID.
+
+IDs are scoped to the process and reset on restart — they are not
+globally unique, but they are unique within a single process lifetime
+and stable enough for log correlation.
+
+### Panic recovery
+
+Both HTTP and gRPC handlers are wrapped with a deferred `recover()`. A
+panicking handler produces a structured 500 response (HTTP) or gRPC
+INTERNAL status (code 13) carrying the request ID, plus a single log
+line with the stack trace. The server stays up — the panic does not
+crash the process or tear down the connection.
+
+Without recovery, Go's `net/http` recovers the panic but writes no
+response, so the client sees a connection reset and the operator has no
+log line tying the failure to a request.
+
 ## Deployment
 
 ### Single process (standalone)
@@ -107,6 +167,18 @@ stored under the `gonacos:snapshot` Redis key.
   the shared external Redis. Durability depends on the Redis instance's own
   persistence configuration (RDB/AOF). All nodes see the same restored state
   on restart.
+
+**Atomic writes**: the disk dump is written via a temp-file-then-rename
+pattern, so a crash mid-write cannot leave a half-written dump file that
+would fail to load on next startup. The dump file is either the previous
+snapshot or the new one — never a partial write.
+
+**Backup rotation**: when `WithSnapshotBackupCount(n)` is set (n > 0), each
+save shifts the existing dump file to `snapshot.1.json`, `snapshot.1.json`
+to `snapshot.2.json`, ..., dropping the oldest when the count is exceeded.
+This protects against a corrupted latest snapshot — the operator can
+manually promote `snapshot.1.json` to `snapshot.json` and restart. Recommended
+production value: 5.
 
 The HTTP backup endpoint (`POST /v3/admin/ops/backup`) provides a Redis-agnostic
 on-demand JSON snapshot for disaster recovery or migration.

@@ -142,6 +142,8 @@ Options (`server.With*`):
 | `WithHTTPWriteTimeout(d)` | `30s` | Maximum HTTP response write duration. Pass `-1` to disable. |
 | `WithHTTPIdleTimeout(d)` | `120s` | Maximum idle (keep-alive) duration for HTTP connections. Pass `-1` to disable. |
 | `WithHTTPVerboseLog(bool)` | `false` | When `true`, log every HTTP request including health/metrics probes. When `false`, noisy paths are excluded. |
+| `WithLoginThrottle(maxFailures, failWindow, lockoutDuration)` | `0` (disabled) | Per-(client-IP, username) brute-force lockout on `/v3/auth/user/login`. Recommended production: `5, 5m, 15m`. |
+| `WithSnapshotBackupCount(n)` | `0` (disabled) | Retain the prior N disk-dump snapshots as `snapshot.1.json`, `snapshot.2.json`, ... so a corrupted latest snapshot can be recovered. Recommended: `5`. |
 
 Environment variable fallbacks (used when the corresponding option is not set):
 
@@ -192,6 +194,24 @@ configure them via options or env vars when running in production.
   (`gonacos_push_total{type=config|service}`), and subscription gauges
   (`gonacos_config_subscriptions`, `gonacos_service_subscriptions`). An
   admin-only mirror is also available at `GET /v3/admin/ops/metrics`.
+- **Security response headers**: every response carries `nosniff`,
+  `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy`, and `X-XSS-Protection: 0`.
+  Under TLS, `Strict-Transport-Security` is added. Inner handlers can
+  override any header per-route.
+- **Request tracing** (`X-Request-Id`): every response carries a
+  process-unique correlation ID that is also logged in the access log, so an
+  operator can correlate a specific response to its log entry.
+- **Login brute-force protection** (`WithLoginThrottle`): per-(client-IP,
+  username) lockout after N consecutive failures within a window. Locked
+  pairs receive 429 with `Retry-After` without calling the login handler.
+- **Panic recovery** (HTTP + gRPC): a panicking handler produces a structured
+  500 (HTTP) or gRPC INTERNAL status (code 13) carrying the request ID, plus
+  a log line with the stack trace. The server stays up.
+- **Atomic snapshot writes + backup rotation** (`WithSnapshotBackupCount`):
+  disk dumps are written via temp-file-then-rename so a crash mid-write
+  cannot corrupt the dump file. When `n > 0`, the prior N snapshots are
+  retained as `snapshot.1.json`, `snapshot.2.json`, ... so a corrupted
+  latest snapshot can be recovered from the previous one.
 
 ## Project layout
 

@@ -188,10 +188,27 @@ func (h aiHandler) promptCreateDraft(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, err)
 		return
 	}
+	// Accept both gonacos-native fields (id/name/content) and the Java
+	// Nacos v3 React console fields (promptKey/template). The console sends
+	// promptKey as the unique identifier and template as the prompt body;
+	// map them onto the service layer's id/name/content expectations so
+	// the create-prompt dialog works without a backend protocol change.
+	id := formValue(r, "id")
+	if id == "" {
+		id = formValue(r, "promptKey")
+	}
+	name := formValue(r, "name")
+	if name == "" {
+		name = id
+	}
+	content := formValue(r, "content")
+	if content == "" {
+		content = formValue(r, "template")
+	}
 	res, err := h.service.CreatePromptDraft(
-		formValue(r, "id"),
-		formValue(r, "name"),
-		formValue(r, "content"),
+		id,
+		name,
+		content,
 		formValue(r, "author"),
 		labels, bizTags,
 		formValue(r, "description"),
@@ -1597,12 +1614,63 @@ func buildMcpServer(r *http.Request) (ai.McpServer, error) {
 	if err != nil {
 		return ai.McpServer{}, err
 	}
+	// Accept both the gonacos-native form fields (id/name/description/
+	// protocol/endpoint) and the Java Nacos v3 React console fields
+	// (mcpName + serverSpecification JSON). The console sends mcpName as
+	// the server name and a serverSpecification JSON blob that embeds
+	// name/protocol/description/versionDetail/localServerConfig; unmarshal
+	// the JSON so the create/update MCP dialog works without changing the
+	// console's submit payload.
+	id := formValue(r, "id")
+	name := formValue(r, "name")
+	description := formValue(r, "description")
+	protocol := formValue(r, "protocol")
+	endpoint := formValue(r, "endpoint")
+	if specJSON := formValue(r, "serverSpecification"); specJSON != "" {
+		var spec struct {
+			Name        string            `json:"name"`
+			Protocol    string            `json:"protocol"`
+			Description string            `json:"description"`
+			Version     struct {
+				Version string `json:"version"`
+			} `json:"versionDetail"`
+			Local    map[string]any    `json:"localServerConfig"`
+			Endpoint map[string]any    `json:"remoteServerConfig"`
+			Metadata map[string]string `json:"metadata"`
+		}
+		if err := json.Unmarshal([]byte(specJSON), &spec); err != nil {
+			return ai.McpServer{}, err
+		}
+		if name == "" {
+			name = spec.Name
+		}
+		if protocol == "" {
+			protocol = spec.Protocol
+		}
+		if description == "" {
+			description = spec.Description
+		}
+		if spec.Metadata != nil && metadata == nil {
+			metadata = spec.Metadata
+		}
+		_ = spec.Version
+		_ = spec.Local
+		_ = spec.Endpoint
+	}
+	// Java console sends mcpName as the server name when no id field is
+	// present — fall back to it so create-from-dialog works.
+	if id == "" {
+		id = formValue(r, "mcpName")
+	}
+	if name == "" {
+		name = formValue(r, "mcpName")
+	}
 	return ai.McpServer{
-		ID:          formValue(r, "id"),
-		Name:        formValue(r, "name"),
-		Description: formValue(r, "description"),
-		Protocol:    formValue(r, "protocol"),
-		Endpoint:    formValue(r, "endpoint"),
+		ID:          id,
+		Name:        name,
+		Description: description,
+		Protocol:    protocol,
+		Endpoint:    endpoint,
 		Tools:       tools,
 		Labels:      labels,
 		Metadata:    metadata,

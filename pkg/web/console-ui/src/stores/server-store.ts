@@ -56,23 +56,30 @@ export const useServerStore = create<ServerStore>((set) => ({
     set({ loading: true, error: null });
     try {
       const response = await serverApi.getState();
-      // Response interceptor already unwraps response.data (returns HTTP body)
-      // Server state API returns a flat object directly (no {code, data} wrapper)
-      const data = response as unknown as {
-        version?: string;
-        standalone_mode?: string;
-        function_mode?: string;
-        login_page_enabled?: string | boolean;
-        auth_enabled?: string | boolean;
-        console_ui_enabled?: string | boolean;
-        startup_mode?: string;
-        config_retention_days?: string | number;
-        auth_admin_request?: string | boolean;
-        auth_system_type?: string;
-        copilot_enabled?: string | boolean;
-        ai_enabled?: string | boolean;
+      // Response interceptor returns the HTTP body ({code, message, data}).
+      // Unwrap the inner data field — same pattern as namespace-store,
+      // config-store, etc. The state object lives at response.data, not at
+      // the top level.
+      const body = response as unknown as {
+        code: number;
+        message?: string;
+        data: {
+          version?: string;
+          standalone_mode?: string;
+          function_mode?: string;
+          login_page_enabled?: string | boolean;
+          auth_enabled?: string | boolean;
+          console_ui_enabled?: string | boolean;
+          startup_mode?: string;
+          config_retention_days?: string | number;
+          auth_admin_request?: string | boolean;
+          auth_system_type?: string;
+          copilot_enabled?: string | boolean;
+          ai_enabled?: string | boolean;
+        };
       };
-      
+      const data = body.data || {};
+
       set({
         version: data.version || '',
         standaloneMode: data.standalone_mode || '',

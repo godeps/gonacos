@@ -44,9 +44,16 @@ export const useAuthStore = create<AuthStore>((set) => ({
     set({ loading: true, error: null });
     try {
       const response = await authApi.login({ username, password });
-      // Response interceptor already unwraps response.data
-      const data = response as unknown as TokenData;
-      
+      // Response interceptor returns the HTTP body ({code, message, data}).
+      // Unwrap the inner data field — same pattern as namespace-store,
+      // config-store, etc.
+      const body = response as unknown as {
+        code: number;
+        message?: string;
+        data: TokenData;
+      };
+      const data = body.data || ({} as TokenData);
+
       const tokenData: TokenData = {
         accessToken: data.accessToken,
         username: data.username || username,

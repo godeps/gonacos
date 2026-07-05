@@ -7,7 +7,12 @@ import path from 'path';
 const isTest = !!process.env.VITEST;
 
 export default defineConfig(({ command }) => ({
-  base: command === 'build' ? './' : '/',
+  // Absolute base path so asset URLs in index.html resolve correctly
+  // regardless of whether the page is accessed with a trailing slash.
+  // With base:'./', visiting /v3/console/ui (no slash) makes the browser
+  // resolve ./js/main.js as /v3/console/js/main.js (404). Absolute base
+  // sidesteps the trailing-slash ambiguity entirely.
+  base: command === 'build' ? '/v3/console/ui/' : '/',
   plugins: [react(), tailwindcss()],
   test: {
     globals: true,

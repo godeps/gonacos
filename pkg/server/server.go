@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/godeps/gonacos/pkg/app"
+	"github.com/godeps/gonacos/pkg/auth"
 	"github.com/godeps/gonacos/pkg/cluster"
 	"github.com/godeps/gonacos/pkg/observability"
 	grpcsrv "github.com/godeps/gonacos/pkg/protocol/grpc"
@@ -158,6 +159,19 @@ func New(opts ...Option) (*Server, error) {
 		logger.Errorf("load snapshot: %v (starting with empty state)", err)
 	} else {
 		logger.Infof("snapshot loaded")
+	}
+
+	// Auto-bootstrap the default admin user (nacos/nacos) when none exists.
+	// The snapshot load above restores previously seeded users; this runs
+	// after and is a no-op when an admin was already restored. On first run
+	// (no snapshot), this seeds the admin so the console's login page works
+	// out of the box — matches Java Nacos standalone behavior. Operators
+	// should change the password after first login (the audit log records
+	// the bootstrap event).
+	if _, err := bundle.Auth.BootstrapAdmin(""); err != nil && err != auth.ErrAdminExists {
+		logger.Errorf("bootstrap admin: %v", err)
+	} else if err == nil {
+		logger.Infof("admin user %q bootstrapped with default password — change it after first login", auth.DefaultAdminUser)
 	}
 
 	push := app.NewPushService(grpcsrv.NewConnectionRegistry(), bundle.Config, bundle.Naming)

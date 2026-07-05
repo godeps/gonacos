@@ -273,7 +273,11 @@ func stateHandler(w http.ResponseWriter, r *http.Request) {
 		"login_page_enabled":    "true",
 		"auth_enabled":          "true",
 		"console_ui_enabled":    "true",
-		"auth_admin_request":    "true",
+		// admin user is auto-bootstrapped at startup with the default
+		// password (nacos/nacos), so the console's "initialize admin"
+		// register page is skipped — operators land on the login page
+		// directly. Change the password after first login.
+		"auth_admin_request":    "false",
 		"auth_system_type":      "nacos",
 		"copilot_enabled":       "false",
 		"ai_enabled":            "true",

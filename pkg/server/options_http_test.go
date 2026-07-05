@@ -25,6 +25,14 @@ func TestResolveHTTPHardeningDefaults(t *testing.T) {
 	if got := o.resolveHTTPIdleTimeout(); got != 120*time.Second {
 		t.Errorf("default resolveHTTPIdleTimeout = %v, want 120s", got)
 	}
+	// ReadTimeout defaults to 30s — without it, a client can send a
+	// request body very slowly and hold a goroutine indefinitely
+	// (slowloris-on-body). ReadHeaderTimeout (5s, hardcoded) only
+	// covers the headers; the body-level cap is the security-critical
+	// piece.
+	if got := o.resolveHTTPReadTimeout(); got != 30*time.Second {
+		t.Errorf("default resolveHTTPReadTimeout = %v, want 30s", got)
+	}
 }
 
 // TestResolveHTTPHardeningConfigured verifies that explicit options override
@@ -36,6 +44,7 @@ func TestResolveHTTPHardeningConfigured(t *testing.T) {
 		HTTPMaxBodyBytes: 2048,
 		HTTPWriteTimeout: 10 * time.Second,
 		HTTPIdleTimeout:  60 * time.Second,
+		HTTPReadTimeout:  45 * time.Second,
 	}
 	if got := o.resolveHTTPRateRPS(); got != 50 {
 		t.Errorf("resolveHTTPRateRPS = %v, want 50", got)
@@ -59,6 +68,9 @@ func TestResolveHTTPHardeningConfigured(t *testing.T) {
 	if got := o.resolveHTTPIdleTimeout(); got != 60*time.Second {
 		t.Errorf("resolveHTTPIdleTimeout = %v, want 60s", got)
 	}
+	if got := o.resolveHTTPReadTimeout(); got != 45*time.Second {
+		t.Errorf("resolveHTTPReadTimeout = %v, want 45s", got)
+	}
 
 	// Negative max-body disables the cap.
 	o.HTTPMaxBodyBytes = -1
@@ -71,6 +83,12 @@ func TestResolveHTTPHardeningConfigured(t *testing.T) {
 	if got := o.resolveHTTPWriteTimeout(); got != -1 {
 		t.Errorf("resolveHTTPWriteTimeout (disabled) = %v, want -1", got)
 	}
+
+	// Negative read timeout disables it.
+	o.HTTPReadTimeout = -1
+	if got := o.resolveHTTPReadTimeout(); got != -1 {
+		t.Errorf("resolveHTTPReadTimeout (disabled) = %v, want -1", got)
+	}
 }
 
 // TestResolveHTTPHardeningEnv verifies that env vars are picked up when the
@@ -80,6 +98,7 @@ func TestResolveHTTPHardeningEnv(t *testing.T) {
 	t.Setenv("GONACOS_HTTP_MAX_BODY", "5242880")
 	t.Setenv("GONACOS_HTTP_WRITE_TIMEOUT", "45s")
 	t.Setenv("GONACOS_HTTP_IDLE_TIMEOUT", "90s")
+	t.Setenv("GONACOS_HTTP_READ_TIMEOUT", "60s")
 
 	o := options{}
 	if got := o.resolveHTTPRateRPS(); got != 75 {
@@ -96,5 +115,8 @@ func TestResolveHTTPHardeningEnv(t *testing.T) {
 	}
 	if got := o.resolveHTTPIdleTimeout(); got != 90*time.Second {
 		t.Errorf("env resolveHTTPIdleTimeout = %v, want 90s", got)
+	}
+	if got := o.resolveHTTPReadTimeout(); got != 60*time.Second {
+		t.Errorf("env resolveHTTPReadTimeout = %v, want 60s", got)
 	}
 }

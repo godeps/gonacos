@@ -47,6 +47,20 @@ type options struct {
 	HTTPMaxBodyBytes int64
 	HTTPWriteTimeout time.Duration
 	HTTPIdleTimeout  time.Duration
+	// HTTPReadTimeout caps the total time for reading an entire
+	// request, including headers and body. Distinct from
+	// ReadHeaderTimeout (which only covers the headers and is
+	// hardcoded to 5s in [New]): without a body-level cap a client
+	// can send a request body very slowly (1 byte/second) and hold
+	// a goroutine indefinitely, even with maxBodyMiddleware limiting
+	// the total size — that middleware caps bytes, not read rate.
+	// The slowloris-on-body attack exhausts the server's goroutine
+	// and fd budget without sending much data. Default 30s (see
+	// resolveHTTPReadTimeout) gives a 10 MiB upload a minimum
+	// sustained rate of ~333 KB/s, which is fine for LAN and most
+	// WAN deployments; operators with very slow clients can raise it
+	// via [WithHTTPReadTimeout] or GONACOS_HTTP_READ_TIMEOUT.
+	HTTPReadTimeout time.Duration
 
 	// Request logging. When true, every HTTP request is logged (including
 	// health/metrics probes). When false (default), noisy paths are
@@ -341,6 +355,26 @@ func WithHTTPWriteTimeout(d time.Duration) Option {
 // not recommended in production).
 func WithHTTPIdleTimeout(d time.Duration) Option {
 	return func(o *options) { o.HTTPIdleTimeout = d }
+}
+
+// WithHTTPReadTimeout sets the maximum duration for reading an entire
+// HTTP request, including headers and body. A zero value defaults to
+// 30s; pass a negative value to disable (not recommended — exposes
+// the server to slowloris-on-body attacks where a client sends a
+// request body very slowly to hold a goroutine indefinitely).
+//
+// Distinct from ReadHeaderTimeout (5s, hardcoded): ReadHeaderTimeout
+// only covers the request line and headers, so without a body-level
+// cap a client can send a 10 MiB body at 1 byte/second and hold a
+// goroutine for ~121 days. maxBodyMiddleware caps total bytes but
+// not read rate; this timeout caps read time.
+//
+// gonacos has no streaming-upload endpoints, so 30s is safe for the
+// standard Nacos API (10 MiB at 333 KB/s). Operators with very slow
+// clients can raise it; the value is exposed as
+// GONACOS_HTTP_READ_TIMEOUT.
+func WithHTTPReadTimeout(d time.Duration) Option {
+	return func(o *options) { o.HTTPReadTimeout = d }
 }
 
 // WithHTTPVerboseLog enables per-request logging including health and
@@ -789,6 +823,34 @@ func (o *options) resolveHTTPIdleTimeout() time.Duration {
 		}
 	}
 	return 120 * time.Second
+}
+
+// resolveHTTPReadTimeout returns the maximum duration for reading an
+// entire HTTP request, including headers and body. Defaults to 30s.
+// A negative return value disables the timeout (not recommended —
+// exposes the server to slowloris-on-body attacks).
+//
+// Distinct from the hardcoded ReadHeaderTimeout (5s), which only
+// covers the request line and headers. Without this body-level cap,
+// a client can send a request body very slowly (1 byte/second) and
+// hold a goroutine indefinitely, even with maxBodyMiddleware
+// limiting the total size — that middleware caps bytes, not read
+// rate. The slowloris-on-body attack exhausts the server's goroutine
+// and fd budget without sending much data.
+//
+// 30s gives a 10 MiB upload (the default max body) a minimum
+// sustained rate of ~333 KB/s, which is fine for LAN and most WAN
+// deployments.
+func (o *options) resolveHTTPReadTimeout() time.Duration {
+	if o.HTTPReadTimeout != 0 {
+		return o.HTTPReadTimeout
+	}
+	if v := os.Getenv("GONACOS_HTTP_READ_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d != 0 {
+			return d
+		}
+	}
+	return 30 * time.Second
 }
 
 // resolveHTTPVerboseLog returns whether to log every HTTP request including

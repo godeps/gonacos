@@ -317,6 +317,7 @@ func New(opts ...Option) (*Server, error) {
 
 	writeTimeout := o.resolveHTTPWriteTimeout()
 	idleTimeout := o.resolveHTTPIdleTimeout()
+	readTimeout := o.resolveHTTPReadTimeout()
 	httpSrv := &http.Server{
 		Handler:           httpHandler,
 		ReadHeaderTimeout: 5 * time.Second,
@@ -326,6 +327,15 @@ func New(opts ...Option) (*Server, error) {
 	}
 	if idleTimeout > 0 {
 		httpSrv.IdleTimeout = idleTimeout
+	}
+	// ReadTimeout caps the total time for reading an entire request,
+	// including the body. Without it, a client can send a request body
+	// very slowly (1 byte/second) and hold a goroutine indefinitely —
+	// the slowloris-on-body attack. maxBodyMiddleware caps total bytes
+	// but not read rate. A negative value disables the cap (not
+	// recommended). See resolveHTTPReadTimeout for the rationale.
+	if readTimeout > 0 {
+		httpSrv.ReadTimeout = readTimeout
 	}
 
 	// Build the TLS config once for both HTTP and gRPC. The CertReloader's

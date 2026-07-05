@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -108,6 +109,7 @@ func TestHTTPTimeoutsAreSet(t *testing.T) {
 		server.WithRoot(".."),
 		server.WithHTTPWriteTimeout(7*time.Second),
 		server.WithHTTPIdleTimeout(42*time.Second),
+		server.WithHTTPReadTimeout(11*time.Second),
 	)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -127,6 +129,78 @@ func TestHTTPTimeoutsAreSet(t *testing.T) {
 	base := fmt.Sprintf("http://%s/v3/console/health/liveness", srv.HTTPAddr())
 	if code := get(t, base); code != http.StatusOK {
 		t.Fatalf("health check after timeout config: got %d, want %d", code, http.StatusOK)
+	}
+}
+
+// TestHTTPReadTimeoutRejectsSlowBody verifies that a client sending a
+// request body very slowly is disconnected once ReadTimeout elapses —
+// the slowloris-on-body attack. Without ReadTimeout, the server would
+// hold the goroutine indefinitely (maxBodyMiddleware caps bytes, not
+// read rate).
+//
+// The test uses a short ReadTimeout (250ms) and a body that would take
+// 5+ seconds to send at the test's pace. A passing test means the
+// server closed the connection before the body was fully sent, which
+// is the security property we need.
+func TestHTTPReadTimeoutRejectsSlowBody(t *testing.T) {
+	srv, err := server.New(
+		server.WithAddr("127.0.0.1:0"),
+		server.WithGRPCAddr("127.0.0.1:0"),
+		server.WithRoot(".."),
+		server.WithHTTPReadTimeout(250*time.Millisecond),
+		// Disable the per-IP rate limiter so it doesn't interfere.
+		server.WithHTTPRateLimit(0, 0),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer func() { _ = srv.Shutdown(context.Background()) }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = srv.Start(ctx) }()
+
+	// Open a raw TCP connection so we can pace bytes manually.
+	conn, err := net.DialTimeout("tcp", srv.HTTPAddr(), 2*time.Second)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	// Send the request line and headers fast — ReadHeaderTimeout is 5s,
+	// so this is well within bounds. Use the liveness endpoint (GET, no
+	// body required for the handler to run) but claim a body to keep
+	// the connection reading.
+	_, err = conn.Write([]byte("POST /v3/console/health/liveness HTTP/1.1\r\n" +
+		"Host: " + srv.HTTPAddr() + "\r\n" +
+		"Content-Length: 100\r\n" +
+		"Content-Type: application/octet-stream\r\n" +
+		"\r\n"))
+	if err != nil {
+		t.Fatalf("write headers: %v", err)
+	}
+
+	// Send the body 1 byte at a time, pausing between each. 100 bytes
+	// at 50ms each = 5 seconds total, far exceeding the 250ms
+	// ReadTimeout. The server should close the connection within the
+	// first few bytes.
+	body := make([]byte, 100)
+	deadline := time.Now().Add(3 * time.Second)
+	closed := false
+	for i := 0; i < len(body); i++ {
+		if time.Now().After(deadline) {
+			break
+		}
+		if _, err := conn.Write(body[i : i+1]); err != nil {
+			// The server closed the connection — exactly what we want.
+			closed = true
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if !closed {
+		t.Fatalf("server did not close the slow-body connection within 3s — ReadTimeout is not protecting against slowloris-on-body")
 	}
 }
 

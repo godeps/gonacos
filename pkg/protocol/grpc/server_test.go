@@ -479,18 +479,32 @@ func (h *stubHistogram) Observe(ms int64) {
 	h.obsCount++
 }
 
+// stubGauge is a test GaugeMetric that records the last Set value.
+type stubGauge struct {
+	mu  sync.Mutex
+	val int64
+}
+
+func (g *stubGauge) Set(v int64) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.val = v
+}
+
 // stubMetricsRegistry is a test MetricsRegistry that holds a single counter
 // per (name, labels) pair so the test can assert increments.
 type stubMetricsRegistry struct {
 	mu       sync.Mutex
 	counters map[string]*stubCounter
 	histos   map[string]*stubHistogram
+	gauges   map[string]*stubGauge
 }
 
 func newStubMetricsRegistry() *stubMetricsRegistry {
 	return &stubMetricsRegistry{
 		counters: map[string]*stubCounter{},
 		histos:   map[string]*stubHistogram{},
+		gauges:   map[string]*stubGauge{},
 	}
 }
 
@@ -516,6 +530,18 @@ func (r *stubMetricsRegistry) Histogram(name string, labels map[string]string, b
 		r.histos[key] = h
 	}
 	return h
+}
+
+func (r *stubMetricsRegistry) Gauge(name string, labels map[string]string) GaugeMetric {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := name + "/" + labels["method"]
+	g, ok := r.gauges[key]
+	if !ok {
+		g = &stubGauge{}
+		r.gauges[key] = g
+	}
+	return g
 }
 
 // TestServerMetricsRegistryIncrements verifies that the gRPC server records
@@ -623,6 +649,97 @@ func TestServerMetricsRegistryIncrements(t *testing.T) {
 	}
 	if qhObserved <= 0 {
 		t.Fatalf("request-bytes observed = %d, want > 0 (client sent a non-empty payload)", qhObserved)
+	}
+}
+
+// TestServerActiveStreamsGauge verifies that gonacos_grpc_active_streams
+// reflects the in-flight stream count: 1 while a handler is running,
+// 0 after it returns. The gauge is the alerting signal for a peer
+// exhausting the per-connection MaxConcurrentStreams budget — a
+// sustained high value means concurrency is pinned and legitimate
+// clients are being starved.
+func TestServerActiveStreamsGauge(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	registry := newStubMetricsRegistry()
+	srv.MetricsRegistry = registry
+
+	// started is closed by the handler when it begins executing —
+	// gives the test a synchronization point to observe the gauge
+	// mid-request. release is closed by the test to let the handler
+	// return.
+	started := make(chan struct{})
+	release := make(chan struct{})
+	srv.RegisterUnary("Request/block", func(ctx context.Context, req Payload) (Payload, error) {
+		close(started)
+		<-release
+		return Payload{Metadata: Metadata{Type: "TestResponse"}}, nil
+	})
+	go func() { _ = srv.ListenAndServe("127.0.0.1:0") }()
+	for i := 0; i < 50 && srv.Addr() == nil; i++ {
+		time.Sleep(2 * time.Millisecond)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	body := encodeGRPCRequestBody(Payload{Metadata: Metadata{Type: "TestRequest"}})
+	go func() {
+		resp, err := http.Post(
+			"http://"+srv.Addr().String()+"/Request/block",
+			"application/grpc",
+			bytes.NewReader(body),
+		)
+		if err != nil {
+			t.Errorf("post: %v", err)
+			return
+		}
+		resp.Body.Close()
+	}()
+
+	// Wait for handler to start, then observe the gauge mid-request.
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not start within 2s")
+	}
+
+	registry.mu.Lock()
+	g, ok := registry.gauges["gonacos_grpc_active_streams/"]
+	registry.mu.Unlock()
+	if !ok {
+		t.Fatal("no active_streams gauge recorded")
+	}
+	g.mu.Lock()
+	midRequest := g.val
+	g.mu.Unlock()
+	if midRequest != 1 {
+		t.Fatalf("active_streams gauge during request = %d, want 1", midRequest)
+	}
+
+	// Let the handler return, then observe the gauge post-request.
+	close(release)
+	// wait for the goroutine to finish so the defer has run
+	for i := 0; i < 50; i++ {
+		registry.mu.Lock()
+		g2 := registry.gauges["gonacos_grpc_active_streams/"]
+		registry.mu.Unlock()
+		g2.mu.Lock()
+		v := g2.val
+		g2.mu.Unlock()
+		if v == 0 {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	g.mu.Lock()
+	postRequest := g.val
+	g.mu.Unlock()
+	if postRequest != 0 {
+		t.Fatalf("active_streams gauge after request = %d, want 0", postRequest)
 	}
 }
 

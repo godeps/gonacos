@@ -32,3 +32,12 @@ func (a *grpcMetricsAdapter) Counter(name string, labels map[string]string) grpc
 func (a *grpcMetricsAdapter) Histogram(name string, labels map[string]string, buckets []float64) grpcsrv.HistogramMetric {
 	return a.r.Histogram(name, labels, buckets)
 }
+
+// Gauge delegates to the underlying registry, returning the same
+// *observability.Gauge pointer (which satisfies grpc.GaugeMetric via
+// its Set(int64) method). Used for gonacos_grpc_active_streams, which
+// reports the current in-flight stream count so operators can alert
+// when concurrency approaches MaxConcurrentStreams.
+func (a *grpcMetricsAdapter) Gauge(name string, labels map[string]string) grpcsrv.GaugeMetric {
+	return a.r.Gauge(name, labels)
+}

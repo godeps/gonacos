@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -117,6 +118,15 @@ type Server struct {
 	server   *http.Server
 	listener net.Listener
 
+	// activeStreams tracks the number of in-flight gRPC requests
+	// (unary + streaming). Incremented on ServeHTTP entry, decremented
+	// on exit via defer. Reported via gonacos_grpc_active_streams gauge
+	// so operators can alert when the count approaches
+	// MaxConcurrentStreams — a sustained high value signals a peer
+	// exhausting the per-connection stream budget or a slow handler
+	// pinning goroutines.
+	activeStreams atomic.Int64
+
 	// MaxFrameBytes caps the payload size of a single gRPC frame the server
 	// will accept from a peer. Zero falls back to [DefaultMaxFrameBytes].
 	// Set to a negative value to disable the cap (not recommended — a
@@ -144,6 +154,7 @@ type Server struct {
 	MetricsRegistry interface {
 		Counter(name string, labels map[string]string) CounterMetric
 		Histogram(name string, labels map[string]string, buckets []float64) HistogramMetric
+		Gauge(name string, labels map[string]string) GaugeMetric
 	}
 
 	// Logf, when non-nil, is called for diagnostic messages (currently
@@ -278,6 +289,16 @@ type CounterMetric interface {
 // observability.Histogram convention.
 type HistogramMetric interface {
 	Observe(ms int64)
+}
+
+// GaugeMetric is the subset of the observability.Gauge interface the
+// gRPC server needs. Set takes an absolute value (used for
+// gonacos_grpc_active_streams, which reports the current in-flight
+// stream count — operators alert when this approaches
+// MaxConcurrentStreams to catch a peer exhausting the per-connection
+// stream budget).
+type GaugeMetric interface {
+	Set(v int64)
 }
 
 // NewServer returns an empty gRPC server.
@@ -560,6 +581,24 @@ func ClientIPFromContext(ctx context.Context) string {
 // The path format is /{Service}/{Method}. When Logf is set, each request is
 // logged with method, path, grpc-status, duration, and remote address.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Track in-flight streams so gonacos_grpc_active_streams reports the
+	// current concurrency. Increment before the method/content-type
+	// checks so even malformed requests (which still hold a server
+	// goroutine while writing the error response) are counted — the
+	// gauge is "goroutines pinned by gRPC requests", not "valid RPCs
+	// in flight". The deferred func runs after all the early-return
+	// paths; it decrements first, then sets the gauge so the final
+	// reported value reflects the post-decrement count.
+	s.activeStreams.Add(1)
+	defer func() {
+		s.activeStreams.Add(-1)
+		if s.MetricsRegistry != nil {
+			s.MetricsRegistry.Gauge("gonacos_grpc_active_streams", nil).Set(s.activeStreams.Load())
+		}
+	}()
+	if s.MetricsRegistry != nil {
+		s.MetricsRegistry.Gauge("gonacos_grpc_active_streams", nil).Set(s.activeStreams.Load())
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

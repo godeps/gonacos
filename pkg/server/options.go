@@ -21,6 +21,14 @@ type options struct {
 	TLSKeyFile       string
 	Logger           Logger
 	StrictSnapshot   bool
+
+	// HTTP production hardening. Zero values fall back to safe defaults
+	// resolved in [options.resolveHTTP*].
+	HTTPRateRPS      float64
+	HTTPRateBurst    int
+	HTTPMaxBodyBytes int64
+	HTTPWriteTimeout time.Duration
+	HTTPIdleTimeout  time.Duration
 }
 
 // Option configures a Server at construction time. Pass to [New].
@@ -103,6 +111,44 @@ func WithLogger(l Logger) Option {
 // "true", "yes" — case-insensitive — to enable).
 func WithStrictSnapshot(strict bool) Option {
 	return func(o *options) { o.StrictSnapshot = strict }
+}
+
+// WithHTTPRateLimit sets a per-client-IP token bucket rate limit on the HTTP
+// handler. rps is the steady-state requests-per-second; burst is the maximum
+// burst size before throttling kicks in. A burst of zero is clamped to rps
+// rounded up. When rps <= 0, rate limiting is disabled (default). Recommended
+// production value: 100 rps with burst 200 — generous enough for legitimate
+// SDK traffic (which is low-volume per client) while protecting against
+// abusive clients.
+func WithHTTPRateLimit(rps float64, burst int) Option {
+	return func(o *options) {
+		o.HTTPRateRPS = rps
+		o.HTTPRateBurst = burst
+	}
+}
+
+// WithHTTPMaxBody sets the maximum allowed size of an HTTP request body. A
+// request exceeding the limit returns 413 Request Entity Too Large. When
+// zero (default), a 10 MiB cap is enforced by [New]; pass a negative value
+// to disable the cap (not recommended in production).
+func WithHTTPMaxBody(bytes int64) Option {
+	return func(o *options) { o.HTTPMaxBodyBytes = bytes }
+}
+
+// WithHTTPWriteTimeout sets the maximum duration of an HTTP write (response).
+// A zero value defaults to 30s; pass a negative value to disable (not
+// recommended in production). Long-running streaming endpoints should be
+// exempt; the standard Nacos API is request-response, so 30s is generous.
+func WithHTTPWriteTimeout(d time.Duration) Option {
+	return func(o *options) { o.HTTPWriteTimeout = d }
+}
+
+// WithHTTPIdleTimeout sets the maximum amount of time an idle (keep-alive)
+// HTTP connection is held open. A zero value defaults to 120s; pass a
+// negative value to disable (matches Go http.Server default of no timeout,
+// not recommended in production).
+func WithHTTPIdleTimeout(d time.Duration) Option {
+	return func(o *options) { o.HTTPIdleTimeout = d }
 }
 
 func (o *options) resolveAddr() string {
@@ -189,6 +235,79 @@ func (o *options) resolveStrictSnapshot() bool {
 		return true
 	}
 	return false
+}
+
+// resolveHTTPRateRPS returns the configured per-IP rate limit (requests per
+// second). A zero value means rate limiting is disabled.
+func (o *options) resolveHTTPRateRPS() float64 {
+	if o.HTTPRateRPS != 0 {
+		return o.HTTPRateRPS
+	}
+	if v := os.Getenv("GONACOS_HTTP_RATE_RPS"); v != "" {
+		if rps, err := strconv.ParseFloat(v, 64); err == nil && rps > 0 {
+			return rps
+		}
+	}
+	return 0
+}
+
+// resolveHTTPRateBurst returns the burst size for the per-IP rate limiter.
+// Defaults to 2x the rps when unset.
+func (o *options) resolveHTTPRateBurst() int {
+	if o.HTTPRateBurst > 0 {
+		return o.HTTPRateBurst
+	}
+	rps := o.resolveHTTPRateRPS()
+	if rps <= 0 {
+		return 0
+	}
+	burst := int(rps) * 2
+	if burst < 1 {
+		burst = 1
+	}
+	return burst
+}
+
+// resolveHTTPMaxBody returns the maximum HTTP request body size in bytes.
+// Defaults to 10 MiB when unset. A negative return value disables the cap.
+func (o *options) resolveHTTPMaxBody() int64 {
+	if o.HTTPMaxBodyBytes != 0 {
+		return o.HTTPMaxBodyBytes
+	}
+	if v := os.Getenv("GONACOS_HTTP_MAX_BODY"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return n
+		}
+	}
+	return 10 * 1024 * 1024
+}
+
+// resolveHTTPWriteTimeout returns the HTTP write timeout. Defaults to 30s.
+// A negative return value disables the timeout.
+func (o *options) resolveHTTPWriteTimeout() time.Duration {
+	if o.HTTPWriteTimeout != 0 {
+		return o.HTTPWriteTimeout
+	}
+	if v := os.Getenv("GONACOS_HTTP_WRITE_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d != 0 {
+			return d
+		}
+	}
+	return 30 * time.Second
+}
+
+// resolveHTTPIdleTimeout returns the HTTP idle (keep-alive) timeout.
+// Defaults to 120s. A negative return value disables the timeout.
+func (o *options) resolveHTTPIdleTimeout() time.Duration {
+	if o.HTTPIdleTimeout != 0 {
+		return o.HTTPIdleTimeout
+	}
+	if v := os.Getenv("GONACOS_HTTP_IDLE_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d != 0 {
+			return d
+		}
+	}
+	return 120 * time.Second
 }
 
 // splitHostPort splits an address into host and port. Returns "127.0.0.1" and

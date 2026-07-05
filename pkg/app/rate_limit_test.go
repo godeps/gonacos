@@ -1,0 +1,218 @@
+package app
+
+import (
+	"bytes"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"sync"
+	"testing"
+	"time"
+)
+
+// TestRateLimiterPerIP verifies that the per-IP rate limiter throttles the
+// second burst of requests from the same IP while still allowing a request
+// from a different IP.
+func TestRateLimiterPerIP(t *testing.T) {
+	rl := NewRateLimiter(1, 1) // 1 rps, burst 1
+	mw := NewRateLimitMiddleware(rl, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+
+	// First request from IP1 passes (burst).
+	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req1.RemoteAddr = "10.0.0.1:1234"
+	w1 := httptest.NewRecorder()
+	mw.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("first request from IP1: got %d, want %d", w1.Code, http.StatusOK)
+	}
+
+	// Second immediate request from IP1 is throttled.
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.RemoteAddr = "10.0.0.1:1234"
+	w2 := httptest.NewRecorder()
+	mw.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request from IP1: got %d, want %d", w2.Code, http.StatusTooManyRequests)
+	}
+	if got := w2.Header().Get("Retry-After"); got == "" {
+		t.Fatalf("Retry-After header missing on 429 response")
+	}
+
+	// First request from IP2 passes (different bucket).
+	req3 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req3.RemoteAddr = "10.0.0.2:1234"
+	w3 := httptest.NewRecorder()
+	mw.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("first request from IP2: got %d, want %d", w3.Code, http.StatusOK)
+	}
+}
+
+// TestRateLimiterXForwardedFor verifies that X-Forwarded-For is honored so
+// a deployment behind a layer-7 proxy gets per-client buckets.
+func TestRateLimiterXForwardedFor(t *testing.T) {
+	rl := NewRateLimiter(1, 1)
+	mw := NewRateLimitMiddleware(rl, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// First request from XFF client A.
+	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req1.RemoteAddr = "10.0.0.99:1234" // proxy
+	req1.Header.Set("X-Forwarded-For", "203.0.113.1")
+	w1 := httptest.NewRecorder()
+	mw.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("first request from XFF client A: got %d, want %d", w1.Code, http.StatusOK)
+	}
+
+	// Second immediate request from same XFF client A is throttled.
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.RemoteAddr = "10.0.0.99:1234"
+	req2.Header.Set("X-Forwarded-For", "203.0.113.1")
+	w2 := httptest.NewRecorder()
+	mw.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request from XFF client A: got %d, want %d", w2.Code, http.StatusTooManyRequests)
+	}
+
+	// First request from XFF client B (different) passes.
+	req3 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req3.RemoteAddr = "10.0.0.99:1234"
+	req3.Header.Set("X-Forwarded-For", "203.0.113.2")
+	w3 := httptest.NewRecorder()
+	mw.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusOK {
+		t.Fatalf("first request from XFF client B: got %d, want %d", w3.Code, http.StatusOK)
+	}
+}
+
+// TestRateLimiterCleanup verifies that idle buckets are reaped.
+func TestRateLimiterCleanup(t *testing.T) {
+	rl := NewRateLimiter(100, 100)
+	for i := 0; i < 10; i++ {
+		rl.allow("10.0.0." + string(rune('0'+i)))
+	}
+	rl.mu.Lock()
+	n := len(rl.buckets)
+	rl.mu.Unlock()
+	if n != 10 {
+		t.Fatalf("after 10 allows: got %d buckets, want 10", n)
+	}
+
+	// Force all buckets to look idle by backdating lastSeen.
+	rl.mu.Lock()
+	cutoff := time.Now().Add(-2 * time.Minute)
+	for _, b := range rl.buckets {
+		b.lastSeen = cutoff
+	}
+	rl.mu.Unlock()
+
+	rl.cleanup(time.Minute)
+	rl.mu.Lock()
+	n = len(rl.buckets)
+	rl.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("after cleanup: got %d buckets, want 0", n)
+	}
+}
+
+// TestRateLimiterConcurrent exercises the mutex under concurrent access to
+// catch data races when run with -race.
+func TestRateLimiterConcurrent(t *testing.T) {
+	rl := NewRateLimiter(1000, 1000)
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			rl.allow("10.0.0." + string(rune('0'+i%10)))
+		}(i)
+	}
+	wg.Wait()
+}
+
+// TestMaxBodyMiddlewareRejectsOversized verifies that bodies exceeding the
+// limit are rejected mid-read with the standard http.MaxBytesReader behavior.
+func TestMaxBodyMiddlewareRejectsOversized(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Drain the body; MaxBytesReader will return an error once the
+		// limit is exceeded.
+		_, err := io.ReadAll(r.Body)
+		if err == nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		// MaxBytesReader triggers http.MaxBytesError, which the response
+		// writer converts to a 413 status via the http server framework.
+		// In httptest.NewRecorder, we simulate by checking the error.
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+	})
+	mw := NewMaxBodyMiddleware(8, handler)
+
+	body := bytes.Repeat([]byte("x"), 64) // 64 bytes, limit 8
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/octet-stream")
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized body: got %d, want %d", w.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
+// TestMaxBodyMiddlewareAllowsWithinLimit verifies that bodies within the
+// limit pass through unchanged.
+func TestMaxBodyMiddlewareAllowsWithinLimit(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	})
+	mw := NewMaxBodyMiddleware(1024, handler)
+
+	body := []byte("hello")
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("within-limit body: got %d, want %d", w.Code, http.StatusOK)
+	}
+	if string(w.Body.Bytes()) != "hello" {
+		t.Fatalf("within-limit body: got %q, want %q", w.Body.String(), "hello")
+	}
+}
+
+// TestMaxBodyMiddlewareZeroDisables verifies that a zero or negative limit
+// returns the inner handler untouched (no wrapping). Verified behaviorally:
+// when unwrapped, a large body is fully readable (no 413-style truncation).
+func TestMaxBodyMiddlewareZeroDisables(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	})
+	body := bytes.Repeat([]byte("x"), 4096)
+	for _, max := range []int64{0, -1} {
+		mw := NewMaxBodyMiddleware(max, inner)
+		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+		w := httptest.NewRecorder()
+		mw.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("max=%d: got status %d, want %d (handler should be unwrapped)", max, w.Code, http.StatusOK)
+		}
+		if got := w.Body.Len(); got != len(body) {
+			t.Fatalf("max=%d: got %d bytes, want %d (body should pass through)", max, got, len(body))
+		}
+	}
+}

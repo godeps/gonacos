@@ -43,6 +43,7 @@ type Server struct {
 	httpLn        net.Listener
 	grpcLn        net.Listener
 	stopPeriodic  func()
+	stopRateGC    func()
 }
 
 // New builds a Server with the given options. It constructs the service
@@ -159,9 +160,31 @@ func New(opts ...Option) (*Server, error) {
 		return nil, fmt.Errorf("grpc listen %q: %w", grpcAddr, err)
 	}
 
+	httpHandler := app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry)
+
+	// Per-IP rate limiting. Disabled when rps <= 0. The background cleanup
+	// goroutine reaps idle buckets so the map doesn't grow unbounded under
+	// spoofed-IP attacks.
+	var stopRateGC func()
+	if rps := o.resolveHTTPRateRPS(); rps > 0 {
+		rl := app.NewRateLimiter(rps, o.resolveHTTPRateBurst())
+		stopRateGC = rl.StartCleanup(5*time.Minute, 10*time.Minute)
+		httpHandler = app.NewRateLimitMiddleware(rl, httpHandler)
+	}
+
+	httpHandler = app.NewMaxBodyMiddleware(o.resolveHTTPMaxBody(), httpHandler)
+
+	writeTimeout := o.resolveHTTPWriteTimeout()
+	idleTimeout := o.resolveHTTPIdleTimeout()
 	httpSrv := &http.Server{
-		Handler:           app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry),
+		Handler:           httpHandler,
 		ReadHeaderTimeout: 5 * time.Second,
+	}
+	if writeTimeout > 0 {
+		httpSrv.WriteTimeout = writeTimeout
+	}
+	if idleTimeout > 0 {
+		httpSrv.IdleTimeout = idleTimeout
 	}
 
 	return &Server{
@@ -179,6 +202,7 @@ func New(opts ...Option) (*Server, error) {
 		httpLn:        httpLn,
 		grpcLn:        grpcLn,
 		stopPeriodic:  stopPeriodic,
+		stopRateGC:    stopRateGC,
 	}, nil
 }
 
@@ -237,6 +261,9 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	if s.stopPeriodic != nil {
 		s.stopPeriodic()
+	}
+	if s.stopRateGC != nil {
+		s.stopRateGC()
 	}
 	if err := s.persist.Save(ctx); err != nil {
 		s.logger.Warnf("save snapshot on shutdown: %v", err)

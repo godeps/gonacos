@@ -154,7 +154,24 @@ func (h clusterHandler) pluginList(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	protocol.WriteResult(w, http.StatusOK, h.service.ListPlugins())
+	plugins := h.service.ListPlugins()
+	out := make([]map[string]any, 0, len(plugins))
+	for _, p := range plugins {
+		out = append(out, map[string]any{
+			"pluginId":          p.ID,
+			"pluginName":        p.Name,
+			"pluginType":        p.Type,
+			"description":       p.Description,
+			"enabled":           p.Enabled,
+			"critical":          false,
+			"configurable":      len(p.Config) > 0,
+			"exclusive":         false,
+			"available":         p.Available,
+			"availableNodeCount": 1,
+			"totalNodeCount":    1,
+		})
+	}
+	protocol.WriteResult(w, http.StatusOK, out)
 }
 
 func (h clusterHandler) pluginDetail(w http.ResponseWriter, r *http.Request) {

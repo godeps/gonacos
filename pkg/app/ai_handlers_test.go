@@ -278,12 +278,14 @@ func TestAIMcpServerCRUD(t *testing.T) {
 
 	body = doJSON(t, handler, http.MethodGet, "/v3/console/ai/mcp/list", nil, http.StatusOK)
 	data, _ = json.Marshal(body.Data)
-	var list []map[string]any
-	if err := json.Unmarshal(data, &list); err != nil {
+	var page struct {
+		PageItems []map[string]any `json:"pageItems"`
+	}
+	if err := json.Unmarshal(data, &page); err != nil {
 		t.Fatalf("unmarshal list: %v", err)
 	}
-	if len(list) != 1 {
-		t.Fatalf("list = %d, want 1", len(list))
+	if len(page.PageItems) != 1 {
+		t.Fatalf("list = %d, want 1", len(page.PageItems))
 	}
 
 	body = doJSON(t, handler, http.MethodGet, "/v3/console/ai/mcp/importToolsFromMcp?id=m1", nil, http.StatusOK)
@@ -327,12 +329,14 @@ func TestAIA2AAgentRegisterAndVersions(t *testing.T) {
 
 	body = doJSON(t, handler, http.MethodGet, "/v3/console/ai/a2a/list", nil, http.StatusOK)
 	data, _ = json.Marshal(body.Data)
-	var list []map[string]any
-	if err := json.Unmarshal(data, &list); err != nil {
+	var a2aPage struct {
+		PageItems []map[string]any `json:"pageItems"`
+	}
+	if err := json.Unmarshal(data, &a2aPage); err != nil {
 		t.Fatalf("unmarshal list: %v", err)
 	}
-	if len(list) != 1 {
-		t.Fatalf("list = %d, want 1", len(list))
+	if len(a2aPage.PageItems) != 1 {
+		t.Fatalf("list = %d, want 1", len(a2aPage.PageItems))
 	}
 }
 
@@ -443,12 +447,14 @@ func TestAIPromptAdminAndConsoleBothWork(t *testing.T) {
 
 	body := doJSON(t, handler, http.MethodGet, "/v3/admin/ai/prompt/list", nil, http.StatusOK)
 	data, _ := json.Marshal(body.Data)
-	var list []map[string]any
-	if err := json.Unmarshal(data, &list); err != nil {
+	var promptPage struct {
+		PageItems []map[string]any `json:"pageItems"`
+	}
+	if err := json.Unmarshal(data, &promptPage); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(list) != 2 {
-		t.Fatalf("list = %d, want 2", len(list))
+	if len(promptPage.PageItems) != 2 {
+		t.Fatalf("list = %d, want 2", len(promptPage.PageItems))
 	}
 }
 

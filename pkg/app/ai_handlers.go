@@ -342,7 +342,11 @@ func (h aiHandler) promptList(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	protocol.WriteResult(w, http.StatusOK, h.service.ListPrompts())
+	items := h.service.ListPrompts()
+	protocol.WriteResult(w, http.StatusOK, map[string]any{
+		"totalCount": len(items),
+		"pageItems":  items,
+	})
 }
 
 func (h aiHandler) promptVersions(w http.ResponseWriter, r *http.Request) {
@@ -689,7 +693,11 @@ func (h aiHandler) skillList(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	protocol.WriteResult(w, http.StatusOK, h.service.ListSkills())
+	items := h.service.ListSkills()
+	protocol.WriteResult(w, http.StatusOK, map[string]any{
+		"totalCount": len(items),
+		"pageItems":  items,
+	})
 }
 
 func (h aiHandler) skillVersionDetail(w http.ResponseWriter, r *http.Request) {
@@ -969,7 +977,11 @@ func (h aiHandler) agentSpecList(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	protocol.WriteResult(w, http.StatusOK, h.service.ListAgentSpecs())
+	items := h.service.ListAgentSpecs()
+	protocol.WriteResult(w, http.StatusOK, map[string]any{
+		"totalCount": len(items),
+		"pageItems":  items,
+	})
 }
 
 func (h aiHandler) agentSpecVersionDetail(w http.ResponseWriter, r *http.Request) {
@@ -1118,7 +1130,11 @@ func (h aiHandler) a2aList(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	protocol.WriteResult(w, http.StatusOK, h.service.ListA2AAgents())
+	items := h.service.ListA2AAgents()
+	protocol.WriteResult(w, http.StatusOK, map[string]any{
+		"totalCount": len(items),
+		"pageItems":  items,
+	})
 }
 
 func (h aiHandler) a2aVersions(w http.ResponseWriter, r *http.Request) {
@@ -1196,7 +1212,11 @@ func (h aiHandler) mcpList(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	protocol.WriteResult(w, http.StatusOK, h.service.ListMcpServers())
+	items := h.service.ListMcpServers()
+	protocol.WriteResult(w, http.StatusOK, map[string]any{
+		"totalCount": len(items),
+		"pageItems":  items,
+	})
 }
 
 func (h aiHandler) mcpImportTools(w http.ResponseWriter, r *http.Request) {

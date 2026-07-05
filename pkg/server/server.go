@@ -389,7 +389,7 @@ func New(opts ...Option) (*Server, error) {
 		tlsCfg = &tls.Config{
 			GetCertificate: reloader.GetCertificate,
 			NextProtos:     []string{"h2", "http/1.1"},
-			MinVersion:     tls.VersionTLS12,
+			MinVersion:     o.resolveTLSMinVersion(),
 		}
 		httpSrv.TLSConfig = tlsCfg
 	}

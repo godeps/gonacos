@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"net"
 	"os"
 	"path/filepath"
@@ -23,8 +24,18 @@ type options struct {
 	SnapshotHMACKey  string
 	TLSCertFile      string
 	TLSKeyFile       string
-	Logger           Logger
-	StrictSnapshot   bool
+	// TLSMinVersion sets the minimum TLS version accepted by the HTTP
+	// and gRPC listeners when TLS is enabled. Accepted values: "1.2"
+	// (the default, matching Go's crypto/tls recommendation) and "1.3"
+	// (stricter — disables TLS 1.2 and its cipher suites, useful when
+	// compliance or policy requires forward secrecy by default and the
+	// client fleet supports TLS 1.3). Falls back to the
+	// GONACOS_TLS_MIN_VERSION env var. An invalid value falls back to
+	// "1.2" rather than failing startup — a typo should not lock
+	// operators out of the server.
+	TLSMinVersion  string
+	Logger         Logger
+	StrictSnapshot bool
 
 	// Redis connection pool. Zero values fall back to safe production
 	// defaults resolved in [options.resolveRedisPool*]. The defaults are
@@ -359,6 +370,19 @@ func WithTLS(certFile, keyFile string) Option {
 		o.TLSCertFile = certFile
 		o.TLSKeyFile = keyFile
 	}
+}
+
+// WithTLSMinVersion sets the minimum TLS version accepted by the HTTP
+// and gRPC listeners when TLS is enabled. Accepted values: "1.2" (the
+// default, matching Go's crypto/tls recommendation) and "1.3"
+// (stricter — disables TLS 1.2 and its cipher suites, useful when
+// compliance or policy requires forward secrecy by default and the
+// client fleet supports TLS 1.3). Falls back to the
+// GONACOS_TLS_MIN_VERSION env var. An invalid value falls back to
+// "1.2" rather than failing startup — a typo should not lock operators
+// out of the server.
+func WithTLSMinVersion(v string) Option {
+	return func(o *options) { o.TLSMinVersion = v }
 }
 
 // WithLogger sets the logger used by the Server for startup and shutdown
@@ -833,6 +857,28 @@ func (o *options) resolveTLS() (cert, key string) {
 		return o.TLSCertFile, o.TLSKeyFile
 	}
 	return os.Getenv("GONACOS_TLS_CERT_FILE"), os.Getenv("GONACOS_TLS_KEY_FILE")
+}
+
+// resolveTLSMinVersion returns the minimum TLS version for the HTTP and
+// gRPC listeners. Defaults to TLS 1.2 (matching Go's crypto/tls
+// recommendation). "1.3" disables TLS 1.2 and its cipher suites —
+// useful when compliance or policy requires forward secrecy by default
+// and the client fleet supports TLS 1.3. An invalid value falls back
+// to 1.2 rather than failing startup — a typo should not lock
+// operators out of the server.
+func (o *options) resolveTLSMinVersion() uint16 {
+	v := o.TLSMinVersion
+	if v == "" {
+		v = os.Getenv("GONACOS_TLS_MIN_VERSION")
+	}
+	switch strings.ToUpper(strings.TrimSpace(v)) {
+	case "1.3":
+		return tls.VersionTLS13
+	case "1.2", "":
+		return tls.VersionTLS12
+	default:
+		return tls.VersionTLS12
+	}
 }
 
 func (o *options) resolveLogger() Logger {

@@ -30,6 +30,25 @@ func newOpsTestHandler(t *testing.T) (http.Handler, string) {
 	return NewHandlerWithServices("../..", bundle), result.AccessToken
 }
 
+// newOpsTestHandlerWithLogLevel builds a handler with a fresh service bundle
+// and wires the provided log-level setter/getter into the bundle. Used by
+// the log-level endpoint tests to verify the wiring without depending on
+// the real pkg/server.Server.
+func newOpsTestHandlerWithLogLevel(t *testing.T, setter func(string) bool, getter func() (string, bool)) (http.Handler, string) {
+	t.Helper()
+	bundle := NewServiceBundle()
+	bundle.LogLevelSetter = setter
+	bundle.LogLevelGetter = getter
+	if _, err := bundle.Auth.BootstrapAdmin("nacos"); err != nil {
+		t.Fatalf("bootstrap admin: %v", err)
+	}
+	result, err := bundle.Auth.Login("nacos", "nacos")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	return NewHandlerWithServices("../..", bundle), result.AccessToken
+}
+
 // authReq wraps httptest.NewRequest with the admin Bearer token. Used by
 // ops endpoint tests that need to pass the auth middleware.
 func authReq(method, target string, body io.Reader, token string) *http.Request {
@@ -255,3 +274,199 @@ func serviceKeys(m map[string]any) []string {
 	}
 	return out
 }
+
+// TestOpsLogLevelGet verifies that GET /v3/admin/ops/log/level returns the
+// current level and supported=true when the logger implements runtime
+// switching. Operators use this to confirm the active level before issuing
+// a switch.
+func TestOpsLogLevelGet(t *testing.T) {
+	var current string = "INFO"
+	setter := func(level string) bool { current = level; return true }
+	getter := func() (string, bool) { return current, true }
+	handler, token := newOpsTestHandlerWithLogLevel(t, setter, getter)
+
+	headers := map[string]string{authsvc.AuthorizationHeader: authsvc.TokenPrefix + token}
+	body := doJSONWithHeaders(t, handler, http.MethodGet, "/v3/admin/ops/log/level", nil, headers, http.StatusOK)
+	data, _ := json.Marshal(body.Data)
+	var resp struct {
+		Level     string `json:"level"`
+		Supported bool   `json:"supported"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		t.Fatalf("unmarshal data: %v. data=%s", err, data)
+	}
+	if resp.Level != "INFO" || !resp.Supported {
+		t.Fatalf("level=%q supported=%v, want INFO/true", resp.Level, resp.Supported)
+	}
+}
+
+// TestOpsLogLevelGetUnsupported verifies that GET /v3/admin/ops/log/level
+// reports supported=false when the active logger does not implement
+// runtime switching — operators use this to decide whether a rolling
+// restart is needed to apply a level change.
+func TestOpsLogLevelGetUnsupported(t *testing.T) {
+	// bundle without LogLevelGetter — simulates a custom logger that
+	// does not implement SetLeveler/Leveler.
+	handler, token := newOpsTestHandler(t)
+
+	headers := map[string]string{authsvc.AuthorizationHeader: authsvc.TokenPrefix + token}
+	body := doJSONWithHeaders(t, handler, http.MethodGet, "/v3/admin/ops/log/level", nil, headers, http.StatusOK)
+	data, _ := json.Marshal(body.Data)
+	var resp struct {
+		Level     string `json:"level"`
+		Supported bool   `json:"supported"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		t.Fatalf("unmarshal data: %v. data=%s", err, data)
+	}
+	if resp.Supported {
+		t.Fatalf("supported=true, want false (logger does not implement Leveler)")
+	}
+}
+
+// TestOpsLogLevelSet verifies that POST /v3/admin/ops/log/level switches the
+// runtime log level and returns the new level. The case-insensitive parse
+// means "warn" and "WARN" are equivalent — operators typing ad-hoc curl
+// commands should not have to remember the exact case.
+func TestOpsLogLevelSet(t *testing.T) {
+	var current string = "INFO"
+	var setCalled bool
+	setter := func(level string) bool {
+		setCalled = true
+		current = level
+		return true
+	}
+	getter := func() (string, bool) { return current, true }
+	handler, token := newOpsTestHandlerWithLogLevel(t, setter, getter)
+
+	body := strings.NewReader(`{"level":"warn"}`)
+	headers := map[string]string{
+		authsvc.AuthorizationHeader: authsvc.TokenPrefix + token,
+		"Content-Type":              "application/json",
+	}
+	respBody := doJSONWithHeaders(t, handler, http.MethodPost, "/v3/admin/ops/log/level", body, headers, http.StatusOK)
+	if !setCalled {
+		t.Fatal("LogLevelSetter was not invoked")
+	}
+	data, _ := json.Marshal(respBody.Data)
+	var resp struct {
+		Level     string `json:"level"`
+		Supported bool   `json:"supported"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		t.Fatalf("unmarshal data: %v. data=%s", err, data)
+	}
+	// Response level is uppercased so the API contract is consistent
+	// regardless of how the operator typed it.
+	if resp.Level != "WARN" || !resp.Supported {
+		t.Fatalf("level=%q supported=%v, want WARN/true", resp.Level, resp.Supported)
+	}
+
+	// Verify the level actually switched via GET.
+	getHeaders := map[string]string{authsvc.AuthorizationHeader: authsvc.TokenPrefix + token}
+	getBody := doJSONWithHeaders(t, handler, http.MethodGet, "/v3/admin/ops/log/level", nil, getHeaders, http.StatusOK)
+	getData, _ := json.Marshal(getBody.Data)
+	var getResp struct {
+		Level string `json:"level"`
+	}
+	_ = json.Unmarshal(getData, &getResp)
+	if getResp.Level != "WARN" {
+		t.Fatalf("GET after switch: level=%q, want WARN", getResp.Level)
+	}
+}
+
+// TestOpsLogLevelSetPutMethod verifies that PUT also works — some operators
+// prefer PUT for idempotent state changes, and the route is registered for
+// both POST and PUT to avoid bikeshedding.
+func TestOpsLogLevelSetPutMethod(t *testing.T) {
+	var current string = "INFO"
+	setter := func(level string) bool { current = level; return true }
+	getter := func() (string, bool) { return current, true }
+	handler, token := newOpsTestHandlerWithLogLevel(t, setter, getter)
+
+	body := strings.NewReader(`{"level":"ERROR"}`)
+	headers := map[string]string{
+		authsvc.AuthorizationHeader: authsvc.TokenPrefix + token,
+		"Content-Type":              "application/json",
+	}
+	_ = doJSONWithHeaders(t, handler, http.MethodPut, "/v3/admin/ops/log/level", body, headers, http.StatusOK)
+}
+
+// TestOpsLogLevelSetInvalidLevel verifies that an unrecognized level name
+// returns 400 — operators get immediate feedback rather than silently
+// leaving the level unchanged.
+func TestOpsLogLevelSetInvalidLevel(t *testing.T) {
+	var setCalled bool
+	setter := func(level string) bool { setCalled = true; return true }
+	getter := func() (string, bool) { return "INFO", true }
+	handler, token := newOpsTestHandlerWithLogLevel(t, setter, getter)
+
+	body := []byte(`{"level":"VERBOSE"}`)
+	rec := httptest.NewRecorder()
+	req := authReq(http.MethodPost, "/v3/admin/ops/log/level", bytes.NewReader(body), token)
+	req.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400. body=%s", rec.Code, rec.Body.String())
+	}
+	if setCalled {
+		t.Fatal("LogLevelSetter should not be called for invalid level")
+	}
+	if !strings.Contains(rec.Body.String(), "DEBUG") {
+		t.Fatalf("error message should list valid levels: %s", rec.Body.String())
+	}
+}
+
+// TestOpsLogLevelSetInvalidBody verifies that malformed JSON returns 400
+// with a clear message.
+func TestOpsLogLevelSetInvalidBody(t *testing.T) {
+	setter := func(level string) bool { return true }
+	getter := func() (string, bool) { return "INFO", true }
+	handler, token := newOpsTestHandlerWithLogLevel(t, setter, getter)
+
+	rec := httptest.NewRecorder()
+	req := authReq(http.MethodPost, "/v3/admin/ops/log/level", bytes.NewReader([]byte(`not json`)), token)
+	req.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400. body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestOpsLogLevelSetUnsupported verifies that POST /v3/admin/ops/log/level
+// returns 501 when the active logger does not implement SetLeveler —
+// operators use this signal to fall back to a rolling restart.
+func TestOpsLogLevelSetUnsupported(t *testing.T) {
+	// bundle without LogLevelSetter — simulates a custom logger.
+	handler, token := newOpsTestHandler(t)
+
+	rec := httptest.NewRecorder()
+	req := authReq(http.MethodPost, "/v3/admin/ops/log/level", bytes.NewReader([]byte(`{"level":"WARN"}`)), token)
+	req.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want 501. body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestOpsLogLevelSetterReturnsFalse verifies that when the underlying setter
+// returns false (logger does not actually implement SetLeveler), the
+// endpoint reports 501 rather than claiming success.
+func TestOpsLogLevelSetterReturnsFalse(t *testing.T) {
+	setter := func(level string) bool { return false }
+	getter := func() (string, bool) { return "INFO", false }
+	handler, token := newOpsTestHandlerWithLogLevel(t, setter, getter)
+
+	rec := httptest.NewRecorder()
+	req := authReq(http.MethodPost, "/v3/admin/ops/log/level", bytes.NewReader([]byte(`{"level":"WARN"}`)), token)
+	req.Header.Set("Content-Type", "application/json")
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want 501. body=%s", rec.Code, rec.Body.String())
+	}
+}
+

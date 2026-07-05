@@ -436,7 +436,7 @@ func New(opts ...Option) (*Server, error) {
 		_ = http2.ConfigureServer(httpSrv, h2s)
 	}
 
-	return &Server{
+	s := &Server{
 		opts:          o,
 		logger:        logger,
 		bundle:        bundle,
@@ -454,7 +454,20 @@ func New(opts ...Option) (*Server, error) {
 		stopPeriodic:  stopPeriodic,
 		stopRateGC:    stopRateGC,
 		stopResource:  startResourceCollector(registry, bundle, push, httpLn, grpcLn, redisClient, 30*time.Second),
-	}, nil
+	}
+	// Wire the runtime log-level controls into the bundle so the ops
+	// endpoint can switch and read the level without the app package
+	// importing server (which would be an import cycle). The closures
+	// capture s, which is safe because the bundle is already referenced
+	// by s and the closures are only invoked after New returns.
+	bundle.LogLevelSetter = func(level string) bool {
+		return s.SetLogLevel(ParseLogLevel(level))
+	}
+	bundle.LogLevelGetter = func() (string, bool) {
+		lvl, supported := s.GetLogLevel()
+		return lvl.String(), supported
+	}
+	return s, nil
 }
 
 // Start launches the HTTP and gRPC servers and blocks until ctx is cancelled
@@ -657,6 +670,49 @@ func (s *Server) ReopenAuditLog() error {
 	}
 	return nil
 }
+
+// SetLogLevel switches the runtime log level of the server's logger without
+// restart. Returns true when the underlying logger implements [SetLeveler]
+// and the switch took effect, false otherwise — operators can use the
+// boolean to decide whether to issue a rolling restart to apply a level
+// change when a custom logger is in use.
+//
+// The level applies to subsequent Infof/Warnf/Errorf calls; in-flight log
+// lines are not interrupted. Safe to call concurrently with logging
+// goroutines — the underlying level is an atomic.Int32.
+func (s *Server) SetLogLevel(level LogLevel) bool {
+	if s == nil || s.logger == nil {
+		return false
+	}
+	sl, ok := s.logger.(SetLeveler)
+	if !ok {
+		return false
+	}
+	sl.SetLevel(level)
+	return true
+}
+
+// GetLogLevel returns the current log level and whether the active logger
+// supports runtime switching. supported is false when the logger does not
+// implement the [Leveler] interface — the level field is then InfoLevel
+// as a conservative default (operators should fall back to startup
+// configuration in that case). Paired with [SetLogLevel] so the ops
+// endpoint can confirm a switch landed.
+func (s *Server) GetLogLevel() (LogLevel, bool) {
+	if s == nil || s.logger == nil {
+		return InfoLevel, false
+	}
+	l, ok := s.logger.(Leveler)
+	if !ok {
+		return InfoLevel, false
+	}
+	return l.Level(), true
+}
+
+// Logger returns the server's active Logger. Exposed so integrations can
+// pass the same logger to subsystems that the server uses for
+// request-scoped logging without re-resolving options.
+func (s *Server) Logger() Logger { return s.logger }
 
 // HTTPAddr returns the actual bound HTTP address. When the configured address
 // uses :0, this returns the kernel-assigned port after [New] returns. Returns

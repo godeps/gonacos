@@ -77,10 +77,8 @@ func TestStdLoggerLevelFiltering(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			lg := &stdLogger{
-				l:     log.New(&buf, "", 0),
-				level: c.level,
-			}
+			lg := &stdLogger{l: log.New(&buf, "", 0)}
+			lg.SetLevel(c.level)
 			lg.Infof("info msg %d", 1)
 			lg.Warnf("warn msg %d", 2)
 			lg.Errorf("err msg %d", 3)
@@ -151,8 +149,8 @@ func TestResolveLoggerAppliesLevel(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *stdLogger, got %T", lg)
 	}
-	if sl.level != ErrorLevel {
-		t.Fatalf("level: got %v, want ERROR", sl.level)
+	if sl.Level() != ErrorLevel {
+		t.Fatalf("level: got %v, want ERROR", sl.Level())
 	}
 }
 
@@ -184,10 +182,8 @@ func TestParseLogFormat(t *testing.T) {
 // log collectors (ELK, Loki, Datadog) parse without extra configuration.
 func TestJSONLoggerOutput(t *testing.T) {
 	var buf bytes.Buffer
-	lg := &jsonLogger{
-		l:     log.New(&buf, "", 0),
-		level: InfoLevel,
-	}
+	lg := &jsonLogger{l: log.New(&buf, "", 0)}
+	lg.SetLevel(InfoLevel)
 	lg.Infof("hello %s", "world")
 	lg.Warnf("warn %d", 42)
 	lg.Errorf("err %v", "boom")
@@ -239,10 +235,8 @@ func TestJSONLoggerLevelFiltering(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			lg := &jsonLogger{
-				l:     log.New(&buf, "", 0),
-				level: c.level,
-			}
+			lg := &jsonLogger{l: log.New(&buf, "", 0)}
+			lg.SetLevel(c.level)
 			lg.Infof("info msg %d", 1)
 			lg.Warnf("warn msg %d", 2)
 			lg.Errorf("err msg %d", 3)
@@ -296,7 +290,88 @@ func TestResolveLoggerSelectsJSON(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *jsonLogger, got %T", lg)
 	}
-	if jl.level != InfoLevel {
-		t.Fatalf("level: got %v, want INFO", jl.level)
+	if jl.Level() != InfoLevel {
+		t.Fatalf("level: got %v, want INFO", jl.Level())
 	}
 }
+
+// TestStdLoggerSetLevel verifies that SetLevel takes effect immediately for
+// subsequent Infof/Warnf calls — operators rely on this to silence a
+// runaway INFO loop without restarting the server. The level is read back
+// via Level() to confirm the switch landed.
+func TestStdLoggerSetLevel(t *testing.T) {
+	var buf bytes.Buffer
+	lg := &stdLogger{l: log.New(&buf, "", 0)}
+	lg.SetLevel(InfoLevel)
+
+	if got := lg.Level(); got != InfoLevel {
+		t.Fatalf("initial level = %v, want INFO", got)
+	}
+
+	lg.Infof("first info")
+	if !strings.Contains(buf.String(), "INFO  first info") {
+		t.Fatalf("INFO not emitted at INFO level: %q", buf.String())
+	}
+
+	// Switch to ERROR — subsequent INFO/WARN should be suppressed.
+	lg.SetLevel(ErrorLevel)
+	if got := lg.Level(); got != ErrorLevel {
+		t.Fatalf("after SetLevel(ERROR): level = %v, want ERROR", got)
+	}
+
+	buf.Reset()
+	lg.Infof("should be suppressed")
+	lg.Warnf("also suppressed")
+	lg.Errorf("error passes through")
+	out := buf.String()
+	if strings.Contains(out, "should be suppressed") || strings.Contains(out, "also suppressed") {
+		t.Fatalf("INFO/WARN not suppressed at ERROR level: %q", out)
+	}
+	if !strings.Contains(out, "ERROR error passes through") {
+		t.Fatalf("ERROR not emitted at ERROR level: %q", out)
+	}
+
+	// Switch back to INFO — INFO should be emitted again (no restart).
+	lg.SetLevel(InfoLevel)
+	buf.Reset()
+	lg.Infof("info again")
+	if !strings.Contains(buf.String(), "INFO  info again") {
+		t.Fatalf("INFO not re-emitted after switching back to INFO: %q", buf.String())
+	}
+}
+
+// TestJSONLoggerSetLevel verifies the same property for the JSON logger:
+// SetLevel takes effect immediately for subsequent emit calls.
+func TestJSONLoggerSetLevel(t *testing.T) {
+	var buf bytes.Buffer
+	lg := &jsonLogger{l: log.New(&buf, "", 0)}
+	lg.SetLevel(WarnLevel)
+
+	if got := lg.Level(); got != WarnLevel {
+		t.Fatalf("initial level = %v, want WARN", got)
+	}
+
+	buf.Reset()
+	lg.Infof("should be suppressed")
+	lg.Warnf("warn passes")
+	lg.Errorf("error passes")
+	out := buf.String()
+	if strings.Contains(out, "should be suppressed") {
+		t.Fatalf("INFO not suppressed at WARN level: %q", out)
+	}
+	if !strings.Contains(out, `"level":"WARN"`) || !strings.Contains(out, `"level":"ERROR"`) {
+		t.Fatalf("WARN/ERROR not emitted at WARN level: %q", out)
+	}
+}
+
+// TestSetLevelerInterface verifies that stdLogger and jsonLogger satisfy both
+// SetLeveler and Leveler at compile time. If a future refactor drops a
+// method, the build breaks here instead of at a call site that type-
+// asserts.
+func TestSetLevelerInterface(t *testing.T) {
+	var _ SetLeveler = (*stdLogger)(nil)
+	var _ Leveler = (*stdLogger)(nil)
+	var _ SetLeveler = (*jsonLogger)(nil)
+	var _ Leveler = (*jsonLogger)(nil)
+}
+

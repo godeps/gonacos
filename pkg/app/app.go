@@ -48,6 +48,23 @@ type ServiceBundle struct {
 	// (login, user/namespace/config CRUD, backup/restore). The HTTP
 	// handlers reach it through the bundle. Nil disables auditing.
 	AuditLogger AuditLogger
+
+	// LogLevelSetter, when non-nil, switches the runtime log level of
+	// the server's logger without restart. The function takes a level
+	// name ("DEBUG", "INFO", "WARN", "ERROR") and returns true when the
+	// underlying logger supported the switch. Wired by [pkg/server.New]
+	// to call [Server.SetLogLevel] — the string boundary keeps app from
+	// importing the server package (which would be a cycle, since
+	// server already imports app). Nil means the active logger does not
+	// support runtime level switching; the ops endpoint reports 501.
+	LogLevelSetter func(level string) bool
+
+	// LogLevelGetter, when non-nil, returns the current log level name
+	// and whether the active logger supports runtime switching. Paired
+	// with LogLevelSetter so GET /v3/admin/ops/log/level can report
+	// the actual current level rather than the last requested one.
+	// Wired by [pkg/server.New] to call [Server.GetLogLevel].
+	LogLevelGetter func() (level string, supported bool)
 }
 
 // NewServiceBundle builds a fresh set of service instances. Each service is
@@ -192,7 +209,7 @@ func NewHandlerWithServicesAndRegistry(root string, services *ServiceBundle, coo
 	registerAuthRoutes(register, authSvc, loginThrottle, services.AuditLogger, registry)
 	registerAIRoutes(register, aiSvc)
 	registerClusterRoutes(register, clusterSvc)
-	registerOpsRoutes(register, coord, registry, services.AuditLogger)
+	registerOpsRoutes(register, coord, registry, services.AuditLogger, services.LogLevelSetter, services.LogLevelGetter)
 	// Standard Prometheus scrape path (no /nacos prefix) so default
 	// prometheus.yml `metrics_path: /metrics` works without configuration.
 	RegisterPublicMetrics(mux, registry, metricsToken)

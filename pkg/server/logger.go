@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -93,26 +94,55 @@ type Logger interface {
 	Errorf(format string, args ...any)
 }
 
+// SetLeveler is an optional interface implemented by loggers that support
+// runtime level switching. The default stdLogger and jsonLogger implement
+// it; custom loggers passed via [WithLogger] can opt-in by implementing
+// SetLevel themselves.
+//
+// The Server exposes [Server.SetLogLevel] as the public entry point so
+// callers do not need to type-assert on this interface themselves.
+// [Server.SetLogLevel] returns false when the underlying logger does not
+// implement SetLeveler, letting operators know the runtime switch is a
+// no-op for their chosen logger.
+type SetLeveler interface {
+	SetLevel(LogLevel)
+}
+
+// Leveler is an optional interface implemented by loggers that can report
+// their current level. The default stdLogger and jsonLogger implement it
+// by reading the atomic.Int32 that backs SetLevel. Used by
+// [Server.GetLogLevel] so the ops endpoint can show the actual current
+// level rather than the last requested one — important when an operator
+// wants to confirm a switch landed.
+type Leveler interface {
+	Level() LogLevel
+}
+
 // stdLogger adapts the standard log package to the Logger interface. It
 // applies level filtering so GONACOS_LOG_LEVEL=WARN suppresses INFO lines
 // and GONACOS_LOG_LEVEL=ERROR suppresses both INFO and WARN lines.
+//
+// The level is stored in an atomic.Int32 so [Server.SetLogLevel] can flip
+// it without taking a lock — useful when an operator hits a runaway-loop
+// log line and needs to drop from INFO to ERROR mid-flight. Reads in the
+// hot path (every Infof/Warnf call) cost a single atomic load.
 type stdLogger struct {
 	l     *log.Logger
-	level LogLevel
+	level atomic.Int32
 }
 
 // Infof logs at INFO level. Suppressed when the configured level is WARN or
 // ERROR.
-func (s stdLogger) Infof(format string, args ...any) {
-	if s.level > InfoLevel {
+func (s *stdLogger) Infof(format string, args ...any) {
+	if LogLevel(s.level.Load()) > InfoLevel {
 		return
 	}
 	s.l.Printf("INFO  "+format, args...)
 }
 
 // Warnf logs at WARN level. Suppressed when the configured level is ERROR.
-func (s stdLogger) Warnf(format string, args ...any) {
-	if s.level > WarnLevel {
+func (s *stdLogger) Warnf(format string, args ...any) {
+	if LogLevel(s.level.Load()) > WarnLevel {
 		return
 	}
 	s.l.Printf("WARN  "+format, args...)
@@ -122,14 +152,29 @@ func (s stdLogger) Warnf(format string, args ...any) {
 // ERROR (which currently does not exist — ERROR is the highest). Use for
 // conditions that require operator attention: snapshot load failures, serve
 // errors, shutdown failures.
-func (s stdLogger) Errorf(format string, args ...any) {
+func (s *stdLogger) Errorf(format string, args ...any) {
 	s.l.Printf("ERROR "+format, args...)
+}
+
+// SetLevel atomically swaps the active log level. Subsequent Infof/Warnf
+// calls observe the new level without restart. Safe for concurrent use.
+func (s *stdLogger) SetLevel(level LogLevel) {
+	s.level.Store(int32(level))
+}
+
+// Level returns the current effective log level. Reads the underlying
+// atomic.Int32 so the value reflects the most recent SetLevel call —
+// used by [Server.GetLogLevel] to report state to operators.
+func (s *stdLogger) Level() LogLevel {
+	return LogLevel(s.level.Load())
 }
 
 // newStdLogger constructs a stdLogger at the given level, writing to stderr
 // with the standard log flags (date + time).
 func newStdLogger(level LogLevel) *stdLogger {
-	return &stdLogger{l: log.New(os.Stderr, "", log.LstdFlags), level: level}
+	s := &stdLogger{l: log.New(os.Stderr, "", log.LstdFlags)}
+	s.level.Store(int32(level))
+	return s
 }
 
 // jsonLogger writes one JSON object per line to stderr. Each line is
@@ -138,20 +183,25 @@ func newStdLogger(level LogLevel) *stdLogger {
 // events without parsing the message. The msg field is the printf-style
 // format string with args applied — structured fields are not supported
 // by the Logger interface (callers wrap zap/zerolog/slog for that).
+//
+// Like stdLogger, the level is held in an atomic.Int32 so runtime
+// switches via [Server.SetLogLevel] take effect immediately.
 type jsonLogger struct {
 	l     *log.Logger
-	level LogLevel
+	level atomic.Int32
 }
 
 // newJSONLogger constructs a jsonLogger at the given level.
 func newJSONLogger(level LogLevel) *jsonLogger {
-	return &jsonLogger{l: log.New(os.Stderr, "", 0), level: level}
+	j := &jsonLogger{l: log.New(os.Stderr, "", 0)}
+	j.level.Store(int32(level))
+	return j
 }
 
 // emit writes a single JSON line. Level filtering happens before the
 // marshal so a suppressed message costs only a comparison.
-func (s jsonLogger) emit(level LogLevel, format string, args ...any) {
-	if s.level > level {
+func (s *jsonLogger) emit(level LogLevel, format string, args ...any) {
+	if LogLevel(s.level.Load()) > level {
 		return
 	}
 	msg := fmt.Sprintf(format, args...)
@@ -169,17 +219,42 @@ func (s jsonLogger) emit(level LogLevel, format string, args ...any) {
 	s.l.Println(string(line))
 }
 
-func (s jsonLogger) Infof(format string, args ...any) {
+func (s *jsonLogger) Infof(format string, args ...any) {
 	s.emit(InfoLevel, format, args...)
 }
 
-func (s jsonLogger) Warnf(format string, args ...any) {
+func (s *jsonLogger) Warnf(format string, args ...any) {
 	s.emit(WarnLevel, format, args...)
 }
 
-func (s jsonLogger) Errorf(format string, args ...any) {
+func (s *jsonLogger) Errorf(format string, args ...any) {
 	s.emit(ErrorLevel, format, args...)
 }
+
+// SetLevel atomically swaps the active log level. Subsequent emit calls
+// observe the new level without restart. Safe for concurrent use.
+func (s *jsonLogger) SetLevel(level LogLevel) {
+	s.level.Store(int32(level))
+}
+
+// Level returns the current effective log level. Reads the underlying
+// atomic.Int32 so the value reflects the most recent SetLevel call —
+// used by [Server.GetLogLevel] to report state to operators.
+func (s *jsonLogger) Level() LogLevel {
+	return LogLevel(s.level.Load())
+}
+
+// Compile-time assertions that stdLogger and jsonLogger satisfy both Logger
+// and SetLeveler. If either method set drifts, the build breaks here
+// instead of at a call site.
+var (
+	_ Logger     = (*stdLogger)(nil)
+	_ SetLeveler = (*stdLogger)(nil)
+	_ Leveler    = (*stdLogger)(nil)
+	_ Logger     = (*jsonLogger)(nil)
+	_ SetLeveler = (*jsonLogger)(nil)
+	_ Leveler    = (*jsonLogger)(nil)
+)
 
 // defaultLogger is the package-level default Logger used when [WithLogger]
 // is not set and as the fallback in [loggerFromContext]. Writes to stderr

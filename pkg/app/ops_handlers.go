@@ -19,10 +19,12 @@ import (
 // coordinator is shared with the long-running service instances so a backup
 // captures live state.
 type opsHandler struct {
-	coordinator *store.Coordinator
-	registry    *observability.Registry
-	refresh     func()
-	audit       AuditLogger
+	coordinator    *store.Coordinator
+	registry       *observability.Registry
+	refresh        func()
+	audit          AuditLogger
+	setLogLevel    func(level string) bool
+	getLogLevel    func() (level string, supported bool)
 }
 
 func registerOpsRoutes(
@@ -30,8 +32,10 @@ func registerOpsRoutes(
 	coordinator *store.Coordinator,
 	registry *observability.Registry,
 	audit AuditLogger,
+	setLogLevel func(string) bool,
+	getLogLevel func() (string, bool),
 ) {
-	h := opsHandler{coordinator: coordinator, registry: registry, refresh: nil, audit: audit}
+	h := opsHandler{coordinator: coordinator, registry: registry, refresh: nil, audit: audit, setLogLevel: setLogLevel, getLogLevel: getLogLevel}
 	if registry != nil {
 		h.refresh = registry.RegisterProcessMetrics()
 	}
@@ -40,6 +44,9 @@ func registerOpsRoutes(
 	register(http.MethodGet, "/v3/admin/ops/info", h.info)
 	register(http.MethodGet, "/v3/admin/ops/backup", h.backup)
 	register(http.MethodPost, "/v3/admin/ops/restore", h.restore)
+	register(http.MethodGet, "/v3/admin/ops/log/level", h.logLevel)
+	register(http.MethodPut, "/v3/admin/ops/log/level", h.setLogLevelHandler)
+	register(http.MethodPost, "/v3/admin/ops/log/level", h.setLogLevelHandler)
 
 	register(http.MethodGet, "/v3/admin/ops/pprof/", pprof.Index)
 	register(http.MethodGet, "/v3/admin/ops/pprof/cmdline", pprof.Cmdline)
@@ -205,4 +212,92 @@ func serviceNames(services map[string]any) []string {
 		names = append(names, name)
 	}
 	return names
+}
+
+// logLevelResponse is the body returned by GET /v3/admin/ops/log/level.
+// The supported field is false when the active logger does not implement
+// runtime level switching (custom logger via [WithLogger] without
+// SetLeveler) — operators use this to decide whether a rolling restart
+// is needed to apply a level change.
+type logLevelResponse struct {
+	Level     string `json:"level"`
+	Supported bool   `json:"supported"`
+}
+
+// logLevel reports the current effective log level and whether the active
+// logger supports runtime switching. Returns 200 with supported=false
+// when the logger does not implement the leveler interface; the level
+// field is "INFO" as a default guess in that case (the real level is
+// whatever was configured at startup, which we cannot read without a
+// getter).
+func (h opsHandler) logLevel(w http.ResponseWriter, r *http.Request) {
+	if h.getLogLevel == nil {
+		protocol.WriteResult(w, http.StatusOK, logLevelResponse{
+			Level:     "INFO",
+			Supported: false,
+		})
+		return
+	}
+	level, supported := h.getLogLevel()
+	protocol.WriteResult(w, http.StatusOK, logLevelResponse{
+		Level:     level,
+		Supported: supported,
+	})
+}
+
+// setLogLevelHandler switches the runtime log level. The request body is
+// {"level":"WARN"} (case-insensitive). Returns 200 with the new level on
+// success, 400 when the level is unrecognized, 501 when the active logger
+// does not support runtime switching.
+func (h opsHandler) setLogLevelHandler(w http.ResponseWriter, r *http.Request) {
+	if h.setLogLevel == nil {
+		protocol.WriteError(w, http.StatusNotImplemented, protocol.Error{
+			Code:    protocol.CodeNotImplemented,
+			Message: "runtime log level switching is not supported by the active logger",
+		})
+		return
+	}
+	var req struct {
+		Level string `json:"level"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		protocol.WriteError(w, http.StatusBadRequest, protocol.Error{
+			Code:    protocol.CodeParameterValidateError,
+			Message: "invalid request body: " + err.Error(),
+		})
+		return
+	}
+	level := strings.ToUpper(strings.TrimSpace(req.Level))
+	if !isValidLogLevel(level) {
+		protocol.WriteError(w, http.StatusBadRequest, protocol.Error{
+			Code:    protocol.CodeParameterValidateError,
+			Message: "level must be one of DEBUG, INFO, WARN, ERROR",
+		})
+		return
+	}
+	if !h.setLogLevel(level) {
+		// The setter returned false — the logger does not actually
+		// implement SetLeveler. Treat as 501 so the operator knows the
+		// switch was a no-op.
+		protocol.WriteError(w, http.StatusNotImplemented, protocol.Error{
+			Code:    protocol.CodeNotImplemented,
+			Message: "runtime log level switching is not supported by the active logger",
+		})
+		return
+	}
+	auditLog(h.audit, r, "log_level", "", "level="+level, AuditResultSuccess)
+	protocol.WriteResult(w, http.StatusOK, logLevelResponse{
+		Level:     level,
+		Supported: true,
+	})
+}
+
+// isValidLogLevel returns true when name is one of the supported level
+// names. Kept local to avoid exporting a parsing helper.
+func isValidLogLevel(name string) bool {
+	switch name {
+	case "DEBUG", "INFO", "WARN", "ERROR":
+		return true
+	}
+	return false
 }

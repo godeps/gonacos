@@ -378,22 +378,32 @@ func (s *Server) recordFrameReadTimeout() {
 }
 
 // recordRateLimitRejection increments
-// gonacos_rate_limit_rejections_total{protocol="grpc"} when the
-// per-IP rate limiter denies a gRPC request. The metric is the
+// gonacos_rate_limit_rejections_total{protocol="grpc",reason="rate_limit"}
+// when the per-IP rate limiter denies a gRPC request. The metric is the
 // alerting signal that gRPC rate limiting is firing — without it,
 // operators can only infer from gonacos_grpc_requests_total{status=
 // "8"} (RESOURCE_EXHAUSTED), which is indirect and breaks if any
 // other path ever returns status 8. The {protocol="grpc"} label
 // distinguishes gRPC rejections from HTTP rejections (recorded by
 // the HTTP rate-limit middleware with protocol="http") so operators
-// can see which protocol is being abused. Callers handle a nil
+// can see which protocol is being abused. The reason="rate_limit"
+// label distinguishes token-bucket exhaustion from max_buckets cap
+// rejections (recorded by the rateLimiter itself with
+// reason="max_buckets" and no protocol label, since the limiter is
+// shared across both protocols). Callers handle a nil
 // MetricsRegistry gracefully (no-op).
+//
+// Note: a max_buckets rejection from RateLimiter.Allow will also
+// increment this counter (the gRPC server cannot distinguish the two
+// cases from the boolean return). Operators alerting on
+// reason="max_buckets" should treat reason="rate_limit" as a
+// superset that includes some cap rejections under attack conditions.
 func (s *Server) recordRateLimitRejection() {
 	if s.MetricsRegistry == nil {
 		return
 	}
 	s.MetricsRegistry.Counter("gonacos_rate_limit_rejections_total",
-		map[string]string{"protocol": "grpc"},
+		map[string]string{"protocol": "grpc", "reason": "rate_limit"},
 	).Inc()
 }
 

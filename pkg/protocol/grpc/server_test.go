@@ -986,9 +986,9 @@ func TestServerRecordFrameReadTimeoutNilRegistryNoop(t *testing.T) {
 
 // TestServerRateLimitRejectionIncrementsMetric verifies that when the
 // per-IP rate limiter rejects a peer, the server increments
-// gonacos_rate_limit_rejections_total{protocol="grpc"} — the alerting
-// signal that gRPC rate limiting is firing. Without it, operators can
-// only infer from gonacos_grpc_requests_total{status="8"}
+// gonacos_rate_limit_rejections_total{protocol="grpc",reason="rate_limit"}
+// — the alerting signal that gRPC rate limiting is firing. Without it,
+// operators can only infer from gonacos_grpc_requests_total{status="8"}
 // (RESOURCE_EXHAUSTED), which is indirect and breaks if any other
 // path ever returns status 8.
 func TestServerRateLimitRejectionIncrementsMetric(t *testing.T) {

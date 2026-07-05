@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -297,9 +298,9 @@ func TestRateLimitMiddlewareRejectionMetric(t *testing.T) {
 	mw.ServeHTTP(httptest.NewRecorder(), req4)
 
 	rejections := registry.Counter("gonacos_rate_limit_rejections_total",
-		map[string]string{"protocol": "http"}).Value()
+		map[string]string{"protocol": "http", "reason": "rate_limit"}).Value()
 	if rejections != 2 {
-		t.Fatalf("gonacos_rate_limit_rejections_total{protocol=\"http\"} = %d, want 2 (one per IP)", rejections)
+		t.Fatalf("gonacos_rate_limit_rejections_total{protocol=\"http\",reason=\"rate_limit\"} = %d, want 2 (one per IP)", rejections)
 	}
 }
 
@@ -324,5 +325,131 @@ func TestRateLimitMiddlewareNilRegistryNoop(t *testing.T) {
 	mw.ServeHTTP(rec, req2)
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("nil registry should still reject: got %d, want 429", rec.Code)
+	}
+}
+
+// TestRateLimiterMaxBucketsCap verifies that when the bucket map reaches
+// maxBuckets, a new IP is rejected instead of allocating a new bucket.
+// This is the spoofed-IP attack guard: without the cap, an attacker
+// sending requests from 10M spoofed IPs would allocate ~500MB of bucket
+// memory before the next cleanup sweep.
+func TestRateLimiterMaxBucketsCap(t *testing.T) {
+	rl := NewRateLimiterWithMaxBuckets(100, 10, 3)
+	// Fill the cap with three distinct IPs.
+	for _, ip := range []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"} {
+		if !rl.allow(ip) {
+			t.Fatalf("allow(%s) = false, want true (cap not yet reached)", ip)
+		}
+	}
+	// A fourth IP should be rejected — the cap is hit.
+	if rl.allow("10.0.0.4") {
+		t.Fatal("allow(10.0.0.4) = true, want false (cap reached)")
+	}
+}
+
+// TestRateLimiterMaxBucketsExistingIPPasses verifies that an IP whose
+// bucket already exists is still allowed after the cap is reached —
+// legitimate clients with existing buckets are not penalized by the cap.
+func TestRateLimiterMaxBucketsExistingIPPasses(t *testing.T) {
+	rl := NewRateLimiterWithMaxBuckets(100, 10, 2)
+	// Two IPs fill the cap.
+	rl.allow("10.0.0.1")
+	rl.allow("10.0.0.2")
+	// Third IP rejected (cap reached).
+	if rl.allow("10.0.0.3") {
+		t.Fatal("allow(10.0.0.3) = true, want false (cap reached)")
+	}
+	// Existing IP still allowed (within its token bucket).
+	if !rl.allow("10.0.0.1") {
+		t.Fatal("allow(10.0.0.1) = false, want true (existing bucket)")
+	}
+}
+
+// TestRateLimiterMaxBucketsZeroDisablesCap verifies that maxBuckets=0
+// removes the cap — preserves the pre-cap behavior for callers that
+// explicitly opt out (e.g. a single-tenant deployment with a known
+// bounded client count).
+func TestRateLimiterMaxBucketsZeroDisablesCap(t *testing.T) {
+	rl := NewRateLimiterWithMaxBuckets(100, 10, 0)
+	// Allocate well beyond DefaultMaxBuckets — no cap, no rejection.
+	for i := 0; i < 1000; i++ {
+		ip := "10.0.0." + strconv.Itoa(i)
+		if !rl.allow(ip) {
+			t.Fatalf("allow(%s) = false, want true (cap disabled)", ip)
+		}
+	}
+}
+
+// TestRateLimiterBucketsGauge verifies that gonacos_rate_limit_buckets
+// reports the current bucket count. Operators alert when the gauge
+// approaches maxBuckets — a sustained high value means either a large
+// client base (raise the cap) or a spoofed-IP attack (investigate).
+func TestRateLimiterBucketsGauge(t *testing.T) {
+	registry := observability.NewRegistry()
+	rl := NewRateLimiterWithMaxBuckets(100, 10, 100)
+	rl.WithMetrics(registry)
+
+	rl.allow("10.0.0.1")
+	rl.allow("10.0.0.2")
+	rl.allow("10.0.0.3")
+
+	got := registry.Gauge("gonacos_rate_limit_buckets", nil).Value()
+	if got != 3 {
+		t.Fatalf("buckets gauge = %d, want 3", got)
+	}
+}
+
+// TestRateLimiterMaxBucketsCapRejectionCounter verifies that a
+// max_buckets rejection increments gonacos_rate_limit_rejections_total
+// {reason="max_buckets"} — distinguished from token-bucket exhaustion
+// (reason="rate_limit") so operators can tell "client is sending too
+// fast" from "server is under IP-spoofing attack".
+func TestRateLimiterMaxBucketsCapRejectionCounter(t *testing.T) {
+	registry := observability.NewRegistry()
+	rl := NewRateLimiterWithMaxBuckets(100, 10, 1)
+	rl.WithMetrics(registry)
+
+	rl.allow("10.0.0.1") // fills cap
+	rl.allow("10.0.0.2") // rejected (cap)
+	rl.allow("10.0.0.3") // rejected (cap)
+
+	got := registry.Counter("gonacos_rate_limit_rejections_total",
+		map[string]string{"reason": "max_buckets"}).Value()
+	if got != 2 {
+		t.Fatalf("max_buckets rejection counter = %d, want 2", got)
+	}
+}
+
+// TestRateLimitMiddlewareMaxBucketsRejectsNewIP verifies the full HTTP
+// middleware path: when the limiter hits maxBuckets, new IPs get 429
+// and the cap rejection counter increments. Existing IPs continue to
+// be throttled by their own token bucket (not 429 unless their bucket
+// is empty).
+func TestRateLimitMiddlewareMaxBucketsRejectsNewIP(t *testing.T) {
+	registry := observability.NewRegistry()
+	rl := NewRateLimiterWithMaxBuckets(100, 10, 1)
+	mw := NewRateLimitMiddleware(rl, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}), registry)
+
+	// First IP fills cap.
+	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req1.RemoteAddr = "10.0.0.1:1234"
+	mw.ServeHTTP(httptest.NewRecorder(), req1)
+
+	// Second IP (new) — rejected with 429.
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.RemoteAddr = "10.0.0.2:1234"
+	rec2 := httptest.NewRecorder()
+	mw.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusTooManyRequests {
+		t.Fatalf("new IP at cap: status = %d, want 429", rec2.Code)
+	}
+
+	// Cap rejection counter should be 1.
+	capRej := registry.Counter("gonacos_rate_limit_rejections_total",
+		map[string]string{"reason": "max_buckets"}).Value()
+	if capRej != 1 {
+		t.Fatalf("max_buckets counter = %d, want 1", capRej)
 	}
 }

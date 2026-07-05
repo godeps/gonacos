@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/godeps/gonacos/pkg/observability"
 )
 
 // stubLogger is a Logger that appends each line to a buffer for assertion.
@@ -36,7 +38,7 @@ func TestRequestLogMiddlewareDefaultExcludes(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	mw := newRequestLogMiddleware(logger, false, inner)
+	mw := newRequestLogMiddleware(logger, false, nil, inner)
 
 	// Health probe is excluded from logs.
 	req := httptest.NewRequest(http.MethodGet, "/v3/console/health/liveness", nil)
@@ -71,7 +73,7 @@ func TestRequestLogMiddlewareVerbose(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mw := newRequestLogMiddleware(logger, true, inner)
+	mw := newRequestLogMiddleware(logger, true, nil, inner)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	w := httptest.NewRecorder()
@@ -89,7 +91,7 @@ func TestRequestLogMiddlewareStatusCapture(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
-	mw := newRequestLogMiddleware(logger, false, inner)
+	mw := newRequestLogMiddleware(logger, false, nil, inner)
 
 	req := httptest.NewRequest(http.MethodGet, "/v3/auth/user/list", nil)
 	w := httptest.NewRecorder()
@@ -107,7 +109,7 @@ func TestRequestLogMiddlewareDefaultStatus(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
-	mw := newRequestLogMiddleware(logger, false, inner)
+	mw := newRequestLogMiddleware(logger, false, nil, inner)
 
 	req := httptest.NewRequest(http.MethodGet, "/v3/auth/user/list", nil)
 	w := httptest.NewRecorder()
@@ -134,5 +136,39 @@ func TestFormatDuration(t *testing.T) {
 		if !strings.Contains(got, c.contains) {
 			t.Fatalf("formatDuration(%v) = %q, want substring %q", c.d, got, c.contains)
 		}
+	}
+}
+
+// TestRequestLogMiddlewareIncrementsMetrics verifies that when a metrics
+// registry is wired in, each request increments gonacos_http_requests_total
+// with the correct method and status labels.
+func TestRequestLogMiddlewareIncrementsMetrics(t *testing.T) {
+	var buf bytes.Buffer
+	logger := stubLogger{buf: &buf}
+	registry := observability.NewRegistry()
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	mw := newRequestLogMiddleware(logger, false, registry, inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/v3/cs/configs", nil)
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+
+	got := registry.Counter("gonacos_http_requests_total", map[string]string{
+		"method": "GET",
+		"status": "404",
+	}).Value()
+	if got != 1 {
+		t.Fatalf("counter value = %d, want 1", got)
+	}
+
+	// Different label set should not be affected.
+	other := registry.Counter("gonacos_http_requests_total", map[string]string{
+		"method": "GET",
+		"status": "200",
+	}).Value()
+	if other != 0 {
+		t.Fatalf("200 counter = %d, want 0", other)
 	}
 }

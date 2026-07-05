@@ -304,6 +304,8 @@ The following metrics are always present:
 | `process_heap_alloc_bytes` | gauge | Go heap allocation |
 | `process_gc_count` | gauge | Completed GC cycles |
 | `process_start_time_seconds` | gauge | Process start epoch |
+| `gonacos_http_requests_total{method,status}` | counter | HTTP requests served, by method and status code |
+| `gonacos_grpc_requests_total{method,status}` | counter | gRPC requests served, by gRPC path and status code |
 | `gonacos_push_total{type="config"}` | counter | Config change notifications pushed to subscribers |
 | `gonacos_push_total{type="service"}` | counter | Service change notifications pushed to subscribers |
 | `gonacos_config_subscriptions` | gauge | Active config subscriptions (client × dataId) |

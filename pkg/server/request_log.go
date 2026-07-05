@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/godeps/gonacos/pkg/observability"
 )
 
 // requestLogMiddleware logs each HTTP request via the configured Logger.
@@ -12,11 +14,18 @@ import (
 // status, duration, and remote address. Skip path-based sampling — the
 // volume is bounded by the rate limiter and legitimate SDK traffic is
 // low-frequency per client.
+//
+// When a metrics registry is wired in, the middleware also increments
+// gonacos_http_requests_total{method,status} so operators can build
+// request-rate and error-rate panels in Grafana without parsing logs.
+// Labels are intentionally low-cardinality (method + status code class)
+// to avoid blowing up the metrics series count on a high-traffic node.
 type requestLogMiddleware struct {
-	logger  Logger
-	verbose bool
-	next    http.Handler
-	exclude map[string]struct{}
+	logger   Logger
+	verbose  bool
+	next     http.Handler
+	exclude  map[string]struct{}
+	registry *observability.Registry
 }
 
 // requestLogExclude is the set of paths that are noisy enough to skip by
@@ -34,16 +43,18 @@ var requestLogExclude = map[string]struct{}{
 
 // newRequestLogMiddleware wraps next with a request logger. When verbose is
 // false, paths in requestLogExclude are skipped (still served, just not
-// logged). When verbose is true, every request is logged.
-func newRequestLogMiddleware(logger Logger, verbose bool, next http.Handler) http.Handler {
-	if logger == nil {
+// logged). When verbose is true, every request is logged. When registry is
+// non-nil, the middleware also increments gonacos_http_requests_total.
+func newRequestLogMiddleware(logger Logger, verbose bool, registry *observability.Registry, next http.Handler) http.Handler {
+	if logger == nil && registry == nil {
 		return next
 	}
 	return &requestLogMiddleware{
-		logger:  logger,
-		verbose: verbose,
-		next:    next,
-		exclude: requestLogExclude,
+		logger:   logger,
+		verbose:  verbose,
+		next:     next,
+		exclude:  requestLogExclude,
+		registry: registry,
 	}
 }
 
@@ -85,15 +96,23 @@ func (m *requestLogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 	duration := time.Since(start)
 	rid := requestIDFromContext(r.Context())
-	m.logger.Infof("http %s %s status=%d bytes=%d duration=%s remote=%s rid=%s",
-		r.Method,
-		r.URL.RequestURI(),
-		rec.status,
-		rec.bytes,
-		formatDuration(duration),
-		r.RemoteAddr,
-		rid,
-	)
+	if m.logger != nil {
+		m.logger.Infof("http %s %s status=%d bytes=%d duration=%s remote=%s rid=%s",
+			r.Method,
+			r.URL.RequestURI(),
+			rec.status,
+			rec.bytes,
+			formatDuration(duration),
+			r.RemoteAddr,
+			rid,
+		)
+	}
+	if m.registry != nil {
+		m.registry.Counter("gonacos_http_requests_total", map[string]string{
+			"method": r.Method,
+			"status": strconv.Itoa(rec.status),
+		}).Inc()
+	}
 }
 
 // formatDuration trims sub-millisecond noise for log readability.

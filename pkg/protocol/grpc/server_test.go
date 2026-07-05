@@ -411,3 +411,85 @@ func TestServerRateLimitedReturnsResourceExhausted(t *testing.T) {
 		t.Fatalf("handlerCalled = %d, want 1 (denied request must not invoke handler)", handlerCalled)
 	}
 }
+
+// stubCounter is a test CounterMetric that counts Inc() calls.
+type stubCounter struct {
+	mu    sync.Mutex
+	count int
+}
+
+func (c *stubCounter) Inc() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.count++
+}
+
+// stubMetricsRegistry is a test MetricsRegistry that holds a single counter
+// per (name, labels) pair so the test can assert increments.
+type stubMetricsRegistry struct {
+	mu       sync.Mutex
+	counters map[string]*stubCounter
+}
+
+func newStubMetricsRegistry() *stubMetricsRegistry {
+	return &stubMetricsRegistry{counters: map[string]*stubCounter{}}
+}
+
+func (r *stubMetricsRegistry) Counter(name string, labels map[string]string) CounterMetric {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := name + "/" + labels["method"] + "/" + labels["status"]
+	c, ok := r.counters[key]
+	if !ok {
+		c = &stubCounter{}
+		r.counters[key] = c
+	}
+	return c
+}
+
+// TestServerMetricsRegistryIncrements verifies that the gRPC server records
+// each request under gonacos_grpc_requests_total{method,status}.
+func TestServerMetricsRegistryIncrements(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	registry := newStubMetricsRegistry()
+	srv.MetricsRegistry = registry
+	srv.RegisterUnary("Request/request", func(ctx context.Context, req Payload) (Payload, error) {
+		return Payload{Metadata: Metadata{Type: "TestResponse"}}, nil
+	})
+	go func() { _ = srv.ListenAndServe("127.0.0.1:0") }()
+	for i := 0; i < 50 && srv.Addr() == nil; i++ {
+		time.Sleep(2 * time.Millisecond)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	body := encodeGRPCRequestBody(Payload{Metadata: Metadata{Type: "TestRequest"}})
+	resp, err := http.Post(
+		"http://"+srv.Addr().String()+"/Request/request",
+		"application/grpc",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	resp.Body.Close()
+
+	// Look up the counter for /Request/request with status=0 (OK).
+	key := "gonacos_grpc_requests_total//Request/request/0"
+	registry.mu.Lock()
+	c, ok := registry.counters[key]
+	registry.mu.Unlock()
+	if !ok {
+		t.Fatalf("no counter recorded for key %q (counters: %v)", key, registry.counters)
+	}
+	c.mu.Lock()
+	got := c.count
+	c.mu.Unlock()
+	if got != 1 {
+		t.Fatalf("counter = %d, want 1", got)
+	}
+}

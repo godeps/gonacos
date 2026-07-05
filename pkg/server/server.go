@@ -116,6 +116,10 @@ func New(opts ...Option) (*Server, error) {
 	// process into OOM by claiming a 4 GiB body. Negative means unlimited
 	// (operator opted out — not recommended in production).
 	grpcSrv.MaxFrameBytes = o.resolveGRPCMaxFrameBytes()
+	// Wire the same metrics registry into the gRPC server so
+	// gonacos_grpc_requests_total is exposed under /metrics alongside the
+	// HTTP and process metrics. A single scrape captures everything.
+	grpcSrv.MetricsRegistry = &grpcMetricsAdapter{r: registry}
 
 	// Readiness checker: ping the Redis client (external or embedded).
 	// Returns 503 when Redis is unreachable so load balancers stop sending
@@ -205,7 +209,7 @@ func New(opts ...Option) (*Server, error) {
 
 	httpHandler = app.NewMaxBodyMiddleware(o.resolveHTTPMaxBody(), httpHandler)
 
-	httpHandler = newRequestLogMiddleware(logger, o.resolveHTTPVerboseLog(), httpHandler)
+	httpHandler = newRequestLogMiddleware(logger, o.resolveHTTPVerboseLog(), registry, httpHandler)
 
 	// Security headers outermost so every response — including 429/413/500
 	// produced by the upper middlewares — carries nosniff, frame-options,

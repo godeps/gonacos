@@ -99,9 +99,28 @@ type Server struct {
 	// HTTP side so a single IP's HTTP + gRPC traffic share one bucket.
 	RateLimiter ClientRateLimiter
 
+	// MetricsRegistry, when non-nil, receives gonacos_grpc_requests_total
+	// {method,status} increments per RPC. Method is the gRPC path
+	// ("/Service/Method"); status is the gRPC status code (0=OK,
+	// 8=RESOURCE_EXHAUSTED, 13=INTERNAL, ...). Operators use this to build
+	// error-rate panels that distinguish "all requests failing" from "one
+	// method failing". The registry is the same one used by the HTTP side,
+	// so /metrics exposes both under a single scrape.
+	MetricsRegistry interface {
+		Counter(name string, labels map[string]string) CounterMetric
+	}
+
 	// Logf, when non-nil, is called for diagnostic messages (currently
 	// panic recovery). When nil, panics are still recovered but not logged.
 	Logf func(format string, args ...any)
+}
+
+// CounterMetric is the subset of the observability.Counter interface the
+// gRPC server needs. Declared here so pkg/protocol/grpc doesn't import
+// pkg/observability (avoids a cycle when observability later imports
+// protocol types for its own dashboards).
+type CounterMetric interface {
+	Inc()
 }
 
 // NewServer returns an empty gRPC server.
@@ -305,6 +324,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.Logf("grpc %s %s status=%s duration=%s remote=%s",
 			r.Method, r.URL.Path, status, formatGRPCDuration(time.Since(start)), r.RemoteAddr)
+	}
+	if s.MetricsRegistry != nil {
+		status := w.Header().Get("grpc-status")
+		if status == "" {
+			status = "?"
+		}
+		s.MetricsRegistry.Counter("gonacos_grpc_requests_total", map[string]string{
+			"method": r.URL.Path,
+			"status": status,
+		}).Inc()
 	}
 }
 

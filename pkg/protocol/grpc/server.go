@@ -149,7 +149,26 @@ type Server struct {
 	// connections then rely solely on IdleTimeout, which cannot detect a
 	// dead peer.
 	KeepAlive KeepAliveConfig
+
+	// ReadFrameTimeout caps the time spent reading a single gRPC frame
+	// (header + body) from a peer. When the deadline elapses, the read
+	// is aborted and the stream is closed. This closes the slowloris
+	// attack on the gRPC body path: without a per-frame deadline, a
+	// peer can send a frame body 1 byte at a time and hold the server's
+	// goroutine for up to MaxFrameBytes seconds (4 MiB at 1 byte/sec =
+	// ~48 days), even with MaxConns capping the total connection count
+	// — each held connection still holds a goroutine and a fd.
+	// Zero falls back to 30s (see [DefaultReadFrameTimeout]); a
+	// negative value disables the cap (not recommended in production).
+	// The timeout applies per-frame on both unary and streaming RPCs;
+	// a streaming peer that sends a frame every <30s is unaffected.
+	ReadFrameTimeout time.Duration
 }
+
+// DefaultReadFrameTimeout is the per-frame read deadline when
+// ReadFrameTimeout is zero. 30s is generous for legitimate clients
+// (a 4 MiB frame at ~133 KB/s) while bounding the slowloris window.
+const DefaultReadFrameTimeout = 30 * time.Second
 
 // KeepAliveConfig configures HTTP/2 keepalive PINGs. Zero values disable the
 // corresponding behavior.
@@ -200,6 +219,16 @@ func (s *Server) maxFrameBytes() int {
 		return s.MaxFrameBytes
 	}
 	return DefaultMaxFrameBytes
+}
+
+// readFrameTimeout returns the per-frame read deadline, falling back to
+// DefaultReadFrameTimeout when unset. A negative value disables the cap
+// (not recommended — re-opens the slowloris-on-body window).
+func (s *Server) readFrameTimeout() time.Duration {
+	if s.ReadFrameTimeout != 0 {
+		return s.ReadFrameTimeout
+	}
+	return DefaultReadFrameTimeout
 }
 
 // RegisterUnary registers a handler for the Request service.
@@ -467,11 +496,14 @@ func formatGRPCDuration(d time.Duration) string {
 
 func (s *Server) handleUnary(ctx context.Context, w http.ResponseWriter, r *http.Request, h Handler) {
 	defer recoverGRPC(s, w, nil, r)
-	frame, err := ReadFrameWithLimit(r.Body, s.maxFrameBytes())
+	frame, err := ReadFrameWithLimitAndTimeout(r.Body, s.maxFrameBytes(), s.readFrameTimeout())
 	if err != nil && !errors.Is(err, io.EOF) {
 		code := StatusInternal
-		if errors.Is(err, ErrFrameTooLarge) {
+		switch {
+		case errors.Is(err, ErrFrameTooLarge):
 			code = StatusResourceExhausted
+		case errors.Is(err, ErrReadFrameTimeout):
+			code = StatusDeadlineExceeded
 		}
 		writeGRPCStatus(w, code, "read frame: "+err.Error())
 		return
@@ -501,11 +533,14 @@ func (s *Server) handleStream(ctx context.Context, w http.ResponseWriter, r *htt
 			tryStreamStatus(w, StatusInternal, "internal server error")
 		}
 	}()
-	frame, err := ReadFrameWithLimit(r.Body, s.maxFrameBytes())
+	frame, err := ReadFrameWithLimitAndTimeout(r.Body, s.maxFrameBytes(), s.readFrameTimeout())
 	if err != nil && !errors.Is(err, io.EOF) {
 		code := StatusInternal
-		if errors.Is(err, ErrFrameTooLarge) {
+		switch {
+		case errors.Is(err, ErrFrameTooLarge):
 			code = StatusResourceExhausted
+		case errors.Is(err, ErrReadFrameTimeout):
+			code = StatusDeadlineExceeded
 		}
 		writeGRPCStatus(w, code, "read frame: "+err.Error())
 		return
@@ -556,7 +591,7 @@ func (s *Server) handleBiStream(ctx context.Context, w http.ResponseWriter, r *h
 	flusher.Flush()
 
 	recv := func() (Payload, error) {
-		frame, err := ReadFrameWithLimit(r.Body, s.maxFrameBytes())
+		frame, err := ReadFrameWithLimitAndTimeout(r.Body, s.maxFrameBytes(), s.readFrameTimeout())
 		if err != nil {
 			return Payload{}, err
 		}

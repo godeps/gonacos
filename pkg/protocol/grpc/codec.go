@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 )
 
 // wireType constants for the protobuf wire format.
@@ -401,6 +402,54 @@ func ReadFrameWithLimit(r io.Reader, maxBytes int) (Frame, error) {
 		return Frame{}, err
 	}
 	return Frame{Compressed: compressed, Payload: body}, nil
+}
+
+// ErrReadFrameTimeout is returned by ReadFrameWithLimitAndTimeout when
+// the per-frame read deadline elapses before the frame is fully read.
+// The caller should close the stream (return from the handler with an
+// error status) so the underlying blocked goroutine unblocks — it
+// exits when the HTTP server closes r.Body as part of stream cleanup.
+var ErrReadFrameTimeout = errors.New("grpc: frame read timed out")
+
+// ReadFrameWithLimitAndTimeout reads one gRPC frame from r with a
+// per-frame read deadline. It behaves like [ReadFrameWithLimit] but
+// aborts the read if the header or body cannot be read within
+// timeout. A timeout <= 0 disables the cap (delegates to
+// ReadFrameWithLimit).
+//
+// This is the slowloris-on-body protection for the gRPC path: without
+// a per-frame deadline, a peer can send a frame body 1 byte at a time
+// and hold the server's goroutine for up to MaxFrameBytes seconds (4
+// MiB at 1 byte/sec ≈ 48 days). MaxConns caps the total connection
+// count, but each held connection still holds a goroutine and a fd.
+//
+// Implementation: the read runs in a goroutine; the caller blocks on
+// a select between the goroutine's result channel and a timer. On
+// timeout, the caller returns ErrReadFrameTimeout and the caller's
+// handler should return from the RPC so the HTTP server closes
+// r.Body, which unblocks the leaked goroutine. The result channel is
+// buffered (cap 1) so the goroutine's send does not block when the
+// caller has already returned on timeout — the goroutine exits
+// cleanly once r.Body is closed.
+func ReadFrameWithLimitAndTimeout(r io.Reader, maxBytes int, timeout time.Duration) (Frame, error) {
+	if timeout <= 0 {
+		return ReadFrameWithLimit(r, maxBytes)
+	}
+	type result struct {
+		frame Frame
+		err   error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		f, err := ReadFrameWithLimit(r, maxBytes)
+		ch <- result{f, err}
+	}()
+	select {
+	case res := <-ch:
+		return res.frame, res.err
+	case <-time.After(timeout):
+		return Frame{}, ErrReadFrameTimeout
+	}
 }
 
 // WriteFrame writes one gRPC frame to w.

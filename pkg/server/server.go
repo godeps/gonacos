@@ -182,6 +182,13 @@ func New(opts ...Option) (*Server, error) {
 	// without sending FIN) so the server doesn't hold a goroutine + fd
 	// alive indefinitely. Disabled when ReadIdleTimeout <= 0.
 	grpcSrv.KeepAlive = o.resolveGRPCKeepAlive()
+	// Per-frame read deadline closes the slowloris-on-body window on
+	// the gRPC path: without it, a peer can send a frame body 1 byte
+	// at a time and hold the server's goroutine for up to MaxFrameBytes
+	// seconds. The timeout applies per-frame on both unary and
+	// streaming RPCs; a streaming peer that sends a frame every <30s
+	// is unaffected. Negative disables (not recommended).
+	grpcSrv.ReadFrameTimeout = o.resolveGRPCReadFrameTimeout()
 	// Wire the same metrics registry into the gRPC server so
 	// gonacos_grpc_requests_total is exposed under /metrics alongside the
 	// HTTP and process metrics. A single scrape captures everything.

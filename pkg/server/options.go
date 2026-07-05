@@ -103,6 +103,19 @@ type options struct {
 	// GONACOS_GRPC_KEEPALIVE_PING_TIMEOUT env vars.
 	GRPCKeepAlive GRPCKeepAliveConfig
 
+	// GRPCReadFrameTimeout caps the time spent reading a single gRPC
+	// frame (header + body) from a peer. When the deadline elapses,
+	// the read is aborted and the stream is closed with
+	// DEADLINE_EXCEEDED. This closes the slowloris-on-body window on
+	// the gRPC path: without a per-frame deadline, a peer can send a
+	// frame body 1 byte at a time and hold the server's goroutine for
+	// up to GRPCMaxFrameBytes seconds (4 MiB at 1 byte/sec ≈ 48 days),
+	// even with MaxConns capping the total connection count — each
+	// held connection still holds a goroutine and a fd. Zero falls
+	// back to 30s; negative disables (not recommended). Falls back to
+	// GONACOS_GRPC_READ_FRAME_TIMEOUT env var.
+	GRPCReadFrameTimeout time.Duration
+
 	// MaxConns caps the total number of concurrent TCP connections the
 	// HTTP and gRPC servers accept. Zero falls back to resolveMaxConns
 	// (10000 default). A negative value disables the cap. When the cap is
@@ -523,6 +536,21 @@ func WithGRPCKeepAlive(readIdle, pingTimeout time.Duration) Option {
 			PingTimeout:     pingTimeout,
 		}
 	}
+}
+
+// WithGRPCReadFrameTimeout caps the time spent reading a single gRPC
+// frame (header + body) from a peer. When the deadline elapses, the
+// read is aborted and the stream is closed with DEADLINE_EXCEEDED.
+// This closes the slowloris-on-body window on the gRPC path: without
+// a per-frame deadline, a peer can send a frame body 1 byte at a time
+// and hold the server's goroutine for up to GRPCMaxFrameBytes seconds
+// (4 MiB at 1 byte/sec ≈ 48 days). A zero value defaults to 30s; a
+// negative value disables (not recommended). The timeout applies
+// per-frame on both unary and streaming RPCs; a streaming peer that
+// sends a frame every <30s is unaffected. Falls back to the
+// GONACOS_GRPC_READ_FRAME_TIMEOUT env var.
+func WithGRPCReadFrameTimeout(d time.Duration) Option {
+	return func(o *options) { o.GRPCReadFrameTimeout = d }
 }
 
 func (o *options) resolveAddr() string {
@@ -949,6 +977,25 @@ func (o *options) resolveGRPCMaxFrameBytes() int {
 		}
 	}
 	return 4 * 1024 * 1024
+}
+
+// resolveGRPCReadFrameTimeout returns the per-gRPC-frame read deadline.
+// Defaults to 30s — generous for legitimate clients (a 4 MiB frame at
+// ~133 KB/s) while bounding the slowloris-on-body window. A negative
+// return value disables the cap (not recommended — re-opens the
+// slowloris window where a peer sends a frame body 1 byte at a time
+// and holds the server's goroutine for up to GRPCMaxFrameBytes
+// seconds). Falls back to GONACOS_GRPC_READ_FRAME_TIMEOUT env var.
+func (o *options) resolveGRPCReadFrameTimeout() time.Duration {
+	if o.GRPCReadFrameTimeout != 0 {
+		return o.GRPCReadFrameTimeout
+	}
+	if v := os.Getenv("GONACOS_GRPC_READ_FRAME_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d != 0 {
+			return d
+		}
+	}
+	return 30 * time.Second
 }
 
 // resolveMaxConns returns the concurrent-connection cap. Defaults to 10000

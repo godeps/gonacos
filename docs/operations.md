@@ -30,13 +30,27 @@ Nacos convention of HTTP port + 1000 (e.g. `8848` → `9848`).
 | `GONACOS_REDIS_ADDR` | (unset) | Redis address for storage and multi-node sync. When set, the process uses the external Redis for both snapshot persistence (key `gonacos:snapshot`) and pub/sub sync. When unset, the process starts an embedded miniredis for in-process persistence with a disk-backed dump, and runs in standalone mode (no cross-node sync). |
 | `GONACOS_DATA_DIR` | `<root>/.gonacos/data` | Directory for the embedded Redis disk dump (`snapshot.json`). Only used in standalone (embedded) mode. |
 | `GONACOS_SNAPSHOT_INTERVAL` | `30s` | Interval for periodic snapshot saves. Go duration syntax (e.g. `10s`, `2m`). |
+| `GONACOS_HTTP_RATE_RPS` | `0` (disabled) | Per-client-IP HTTP rate limit in requests per second. Burst defaults to 2x rps. Recommended production: `100`. |
+| `GONACOS_HTTP_MAX_BODY` | `10485760` (10 MiB) | Maximum HTTP request body size in bytes. `-1` disables the cap. |
+| `GONACOS_HTTP_WRITE_TIMEOUT` | `30s` | Maximum HTTP response write duration. `-1` disables. |
+| `GONACOS_HTTP_IDLE_TIMEOUT` | `120s` | Maximum idle keep-alive duration. `-1` disables. |
 
 ### Resource limits
 
 The in-memory store has no built-in quotas beyond the namespace quota (200
-configs per namespace by default). Operators running in production should
-monitor memory via the `/v3/admin/ops/metrics` endpoint and restart the
-process if heap usage approaches the cgroup limit.
+configs per namespace by default). HTTP-level limits protect against abuse:
+
+- **Request body cap** (`GONACOS_HTTP_MAX_BODY`, default 10 MiB): oversized
+  POST/PUT bodies return 413 instead of OOMing the server.
+- **Per-IP rate limit** (`GONACOS_HTTP_RATE_RPS`, default disabled): token
+  bucket per client IP, honored with burst = 2x rps. Exceeding the limit
+  returns 429 with a `Retry-After` header.
+- **HTTP timeouts**: `ReadHeaderTimeout` 5s, `WriteTimeout`
+  (`GONACOS_HTTP_WRITE_TIMEOUT`, default 30s), `IdleTimeout`
+  (`GONACOS_HTTP_IDLE_TIMEOUT`, default 120s).
+
+Operators running in production should monitor memory via the `/metrics`
+endpoint and restart the process if heap usage approaches the cgroup limit.
 
 ## Deployment
 
@@ -101,14 +115,22 @@ on-demand JSON snapshot for disaster recovery or migration.
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /v3/console/health/liveness` | Process is alive |
-| `GET /v3/console/health/readiness` | Process is ready to serve traffic |
+| `GET /v3/console/health/liveness` | Process is alive (always 200 once started) |
+| `GET /v3/console/health/readiness` | Process is ready to serve traffic (pings Redis) |
 | `GET /v3/admin/core/state/liveness` | Admin liveness |
-| `GET /v3/admin/core/state/readiness` | Admin readiness |
+| `GET /v3/admin/core/state/readiness` | Admin readiness (pings Redis) |
 
 Configure load balancer health checks against `/v3/console/health/readiness`.
-The readiness probe returns 200 once the HTTP mux is mounted, which happens
-synchronously during startup.
+The readiness probe pings the Redis client (external or embedded) with a 2s
+timeout and returns:
+
+- `200 OK` when Redis is reachable — the node can persist state and accept writes.
+- `503 Service Unavailable` when Redis is unreachable — load balancers should
+  stop sending traffic to a node that can't persist state.
+
+Liveness (`/liveness`) returns 200 as long as the process is alive,
+regardless of dependency state. Use liveness for kubelet's "restart the pod"
+probe and readiness for the load balancer's "route traffic here" probe.
 
 ## Backup and restore
 
@@ -180,8 +202,13 @@ A daily cron is the simplest pattern:
 
 ### Metrics
 
-`GET /v3/admin/ops/metrics` returns Prometheus text exposition format. The
-following metrics are always present:
+`GET /metrics` returns Prometheus text exposition format on the standard
+scrape path (no `/nacos` prefix), so the default `prometheus.yml`
+`metrics_path: /metrics` works without configuration. An admin-only mirror
+is also available at `GET /v3/admin/ops/metrics` (gated by the auth
+middleware's anonymous-permissive policy).
+
+The following metrics are always present:
 
 | Metric | Type | Purpose |
 |--------|------|---------|
@@ -189,6 +216,10 @@ following metrics are always present:
 | `process_heap_alloc_bytes` | gauge | Go heap allocation |
 | `process_gc_count` | gauge | Completed GC cycles |
 | `process_start_time_seconds` | gauge | Process start epoch |
+| `gonacos_push_total{type="config"}` | counter | Config change notifications pushed to subscribers |
+| `gonacos_push_total{type="service"}` | counter | Service change notifications pushed to subscribers |
+| `gonacos_config_subscriptions` | gauge | Active config subscriptions (client × dataId) |
+| `gonacos_service_subscriptions` | gauge | Active service subscriptions (client × serviceName) |
 
 Scrape this endpoint from Prometheus:
 
@@ -197,8 +228,16 @@ scrape_configs:
   - job_name: gonacos
     static_configs:
       - targets: ["localhost:8848"]
-    metrics_path: /v3/admin/ops/metrics
+    # metrics_path defaults to /metrics — no override needed.
 ```
+
+### Access log
+
+Each HTTP request is logged at INFO level with method, path, status, bytes,
+duration, and remote address. Health and metrics probes are excluded by
+default to keep the signal-to-noise ratio high. Set
+`GONACOS_HTTP_VERBOSE_LOG=1` or pass `WithHTTPVerboseLog(true)` to log
+every request including probes.
 
 ### Process info
 

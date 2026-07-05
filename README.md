@@ -137,6 +137,11 @@ Options (`server.With*`):
 | `WithTLS(certFile, keyFile)` | `""` (plaintext) | PEM-encoded cert + key for TLS on both HTTP and gRPC. gRPC negotiates HTTP/2 via ALPN. |
 | `WithLogger(l)` | stderr via `log` | Plug in a structured logger (zap, zerolog, slog) by wrapping it to match the `Logger` interface. |
 | `WithStrictSnapshot(bool)` | `false` | When `true`, `New` returns an error if the snapshot fails to load instead of starting with empty state. |
+| `WithHTTPRateLimit(rps, burst)` | `0` (disabled) | Per-client-IP token bucket rate limit on HTTP. Honors `X-Forwarded-For` for layer-7 proxy deployments. Recommended production: `100, 200`. |
+| `WithHTTPMaxBody(bytes)` | `10485760` (10 MiB) | Maximum HTTP request body size. Oversized bodies return 413. Pass `-1` to disable (not recommended). |
+| `WithHTTPWriteTimeout(d)` | `30s` | Maximum HTTP response write duration. Pass `-1` to disable. |
+| `WithHTTPIdleTimeout(d)` | `120s` | Maximum idle (keep-alive) duration for HTTP connections. Pass `-1` to disable. |
+| `WithHTTPVerboseLog(bool)` | `false` | When `true`, log every HTTP request including health/metrics probes. When `false`, noisy paths are excluded. |
 
 Environment variable fallbacks (used when the corresponding option is not set):
 
@@ -148,6 +153,45 @@ Environment variable fallbacks (used when the corresponding option is not set):
 | `GONACOS_AUTH_SECRET` | `WithAuthSecret` |
 | `GONACOS_TLS_CERT_FILE` + `GONACOS_TLS_KEY_FILE` | `WithTLS` |
 | `GONACOS_STRICT_SNAPSHOT` | `WithStrictSnapshot` (`1`/`true`/`yes` to enable) |
+| `GONACOS_HTTP_RATE_RPS` | `WithHTTPRateLimit` (burst defaults to 2x rps) |
+| `GONACOS_HTTP_MAX_BODY` | `WithHTTPMaxBody` |
+| `GONACOS_HTTP_WRITE_TIMEOUT` | `WithHTTPWriteTimeout` |
+| `GONACOS_HTTP_IDLE_TIMEOUT` | `WithHTTPIdleTimeout` |
+
+## Production hardening
+
+gonacos ships with built-in protection for internet-facing deployments. None
+of these are on by default in a way that would break existing embeddings —
+configure them via options or env vars when running in production.
+
+- **Per-IP rate limiting** (`WithHTTPRateLimit`): token-bucket limiter using
+  `golang.org/x/time/rate`. Honors `X-Forwarded-For` so deployments behind a
+  layer-7 proxy get per-client buckets. Idle buckets are reaped every 5
+  minutes so a spoofed-IP attack can't grow the bucket map unbounded.
+  Legitimate SDK traffic is low-volume per client, so a `100 rps / 200 burst`
+  cap is generous.
+- **Request body cap** (`WithHTTPMaxBody`, default 10 MiB): wraps the request
+  body in `http.MaxBytesReader` so an oversized POST returns 413 instead of
+  OOMing the server.
+- **HTTP timeouts** (`WithHTTPWriteTimeout` 30s, `WithHTTPIdleTimeout` 120s):
+  prevent slowloris-style attacks and reclaim idle keep-alive connections.
+  `ReadHeaderTimeout` is hardcoded to 5s.
+- **Readiness probe** (`GET /v3/console/health/readiness`,
+  `GET /v3/admin/core/state/readiness`): pings the Redis client (external or
+  embedded) and returns 503 when Redis is unreachable. Load balancers should
+  gate traffic on this endpoint — a node that can't persist state should not
+  receive writes. Liveness (`/liveness`) is unchanged: it returns 200 as
+  long as the process is alive, regardless of dependency state.
+- **Per-request access log**: one line per request with method, path,
+  status, bytes, duration, and remote address. Health and metrics probes are
+  excluded by default to keep the signal-to-noise ratio high;
+  `WithHTTPVerboseLog(true)` opts into full logging.
+- **Prometheus metrics** at `GET /metrics`: standard text exposition format
+  suitable for the default `prometheus.yml` `metrics_path: /metrics`. Exposes
+  Go runtime metrics (`process_*`), push-path counters
+  (`gonacos_push_total{type=config|service}`), and subscription gauges
+  (`gonacos_config_subscriptions`, `gonacos_service_subscriptions`). An
+  admin-only mirror is also available at `GET /v3/admin/ops/metrics`.
 
 ## Project layout
 

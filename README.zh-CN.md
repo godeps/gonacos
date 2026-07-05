@@ -126,6 +126,11 @@ func main() {
 | `WithTLS(certFile, keyFile)` | `""`(明文) | PEM 编码的证书 + 私钥,HTTP 和 gRPC 同时启用 TLS。gRPC 通过 ALPN 协商 HTTP/2。 |
 | `WithLogger(l)` | stderr 经 `log` 输出 | 注入结构化日志(zap、zerolog、slog),包装成 `Logger` 接口即可。 |
 | `WithStrictSnapshot(bool)` | `false` | 为 `true` 时,快照加载失败会让 `New` 返回错误,而不是以空状态启动。 |
+| `WithHTTPRateLimit(rps, burst)` | `0`(禁用) | 按 client IP 的令牌桶 HTTP 限流。支持 `X-Forwarded-For`,适配 7 层代理。生产推荐:`100, 200`。 |
+| `WithHTTPMaxBody(bytes)` | `10485760`(10 MiB) | HTTP 请求体最大字节数。超限返回 413。传 `-1` 禁用(不推荐)。 |
+| `WithHTTPWriteTimeout(d)` | `30s` | HTTP 响应写超时。传 `-1` 禁用。 |
+| `WithHTTPIdleTimeout(d)` | `120s` | HTTP keep-alive 空闲超时。传 `-1` 禁用。 |
+| `WithHTTPVerboseLog(bool)` | `false` | `true` 时记录每条 HTTP 请求(含 health/metrics 探针)。`false` 时排除嘈杂路径。 |
 
 环境变量 fallback(未设置对应选项时使用):
 
@@ -137,6 +142,21 @@ func main() {
 | `GONACOS_AUTH_SECRET` | `WithAuthSecret` |
 | `GONACOS_TLS_CERT_FILE` + `GONACOS_TLS_KEY_FILE` | `WithTLS` |
 | `GONACOS_STRICT_SNAPSHOT` | `WithStrictSnapshot`(`1`/`true`/`yes` 启用) |
+| `GONACOS_HTTP_RATE_RPS` | `WithHTTPRateLimit`(burst 默认 2x rps) |
+| `GONACOS_HTTP_MAX_BODY` | `WithHTTPMaxBody` |
+| `GONACOS_HTTP_WRITE_TIMEOUT` | `WithHTTPWriteTimeout` |
+| `GONACOS_HTTP_IDLE_TIMEOUT` | `WithHTTPIdleTimeout` |
+
+## 生产硬化
+
+gonacos 内置面向公网部署的保护。默认配置不会破坏现有嵌入场景——生产环境请通过选项或环境变量开启。
+
+- **按 IP 限流**(`WithHTTPRateLimit`):基于 `golang.org/x/time/rate` 的令牌桶。支持 `X-Forwarded-For`,7 层代理后也能按真实客户端分桶。每 5 分钟清理空闲桶,防止伪造 IP 攻击下桶数无限增长。SDK 单客户端流量低,`100 rps / 200 burst` 即足够。
+- **请求体上限**(`WithHTTPMaxBody`,默认 10 MiB):用 `http.MaxBytesReader` 包裹请求体,超限返回 413,防止 OOM。
+- **HTTP 超时**(`WithHTTPWriteTimeout` 30s、`WithHTTPIdleTimeout` 120s):防 slowloris 攻击,回收空闲 keep-alive 连接。`ReadHeaderTimeout` 固定 5s。
+- **就绪探针**(`GET /v3/console/health/readiness`、`GET /v3/admin/core/state/readiness`):ping Redis 客户端(外部或内嵌),Redis 不可达时返回 503。负载均衡器应基于此端点决定是否路由流量——无法持久化的节点不应接收写请求。Liveness(`/liveness`)不变:只要进程存活就返回 200,与依赖状态无关。
+- **请求访问日志**:每条请求一行,含 method、path、status、bytes、duration、remote address。默认排除 health 和 metrics 探针;`WithHTTPVerboseLog(true)` 开启全量日志。
+- **Prometheus 指标**(`GET /metrics`):标准文本格式,默认 `prometheus.yml` 的 `metrics_path: /metrics` 无需配置即可抓取。包含 Go 运行时指标(`process_*`)、push 路径计数器(`gonacos_push_total{type=config|service}`)、订阅 gauge(`gonacos_config_subscriptions`、`gonacos_service_subscriptions`)。`GET /v3/admin/ops/metrics` 提供管理员侧镜像。
 
 ## 项目布局
 

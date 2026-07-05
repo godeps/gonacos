@@ -84,6 +84,66 @@ func TestFileAuditLoggerEmptyPathErrors(t *testing.T) {
 	}
 }
 
+// TestFileAuditLoggerDirectoryPermissions verifies the audit log parent
+// directory is created with mode 0o700. The audit log contains user IPs,
+// usernames, and security-relevant actions (login success/failure, user/
+// role/permission mutations, backup/restore) — all PII or compliance-
+// relevant. Restricting the directory to the gonacos process user is
+// defense in depth on multi-user hosts.
+func TestFileAuditLoggerDirectoryPermissions(t *testing.T) {
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "audit", "gonacos")
+	path := filepath.Join(nested, "audit.log")
+
+	if _, err := NewFileAuditLogger(path); err != nil {
+		t.Fatalf("NewFileAuditLogger: %v", err)
+	}
+
+	info, err := os.Stat(nested)
+	if err != nil {
+		t.Fatalf("stat nested dir: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Errorf("audit dir mode = %o, want 0700", got)
+	}
+
+	// The audit file itself is 0o600 (OpenFile with 0o600).
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat audit file: %v", err)
+	}
+	if got := fileInfo.Mode().Perm(); got != 0o600 {
+		t.Errorf("audit file mode = %o, want 0600", got)
+	}
+}
+
+// TestFileAuditLoggerPreExistingDirectoryModeUnchanged verifies MkdirAll
+// only sets the mode on directories it creates — a pre-existing directory
+// keeps its existing mode. This is the safety contract: an operator who
+// pre-provisions the audit dir with a specific mode (e.g., to share with a
+// SIEM collector) is not surprised by gonacos changing it out from under
+// them.
+func TestFileAuditLoggerPreExistingDirectoryModeUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	nested := filepath.Join(dir, "audit")
+	if err := os.MkdirAll(nested, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(nested, "audit.log")
+
+	if _, err := NewFileAuditLogger(path); err != nil {
+		t.Fatalf("NewFileAuditLogger: %v", err)
+	}
+
+	info, err := os.Stat(nested)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o750 {
+		t.Errorf("pre-existing dir mode changed: got %o, want 0750", got)
+	}
+}
+
 // TestMultiAuditLoggerFansOut verifies that the multi audit logger dispatches
 // events to all wrapped loggers.
 func TestMultiAuditLoggerFansOut(t *testing.T) {

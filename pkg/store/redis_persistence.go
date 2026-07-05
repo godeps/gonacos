@@ -248,10 +248,24 @@ func (p *RedisPersistence) StartPeriodic(ctx context.Context, interval time.Dura
 // file then renames it into place. On POSIX systems rename is atomic, so a
 // crash mid-write cannot leave a half-written dump file that would fail to
 // load on next startup.
+//
+// The parent directory is created with mode 0o700 — the dump file contains
+// bcrypt password hashes, namespace configs, and arbitrary config values
+// (which may include database URLs with embedded credentials or API keys
+// stored as Nacos configs). Restricting the directory to the gonacos
+// process user is defense in depth: even if an attacker has shell access
+// as another user on the host, they cannot traverse into the data
+// directory to read the dump. MkdirAll only sets the mode on directories
+// it creates; pre-existing directories keep whatever mode the operator
+// set, so this is safe to call on a partially-provisioned data dir.
+//
+// The temp file is created by os.CreateTemp with mode 0o600 (Go's
+// default), and os.Rename preserves the mode across the rename, so the
+// final dump file is also 0o600 — only the gonacos user can read it.
 func writeDumpFile(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
 	}

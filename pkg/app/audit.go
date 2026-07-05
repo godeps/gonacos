@@ -118,15 +118,23 @@ type fileAuditLogger struct {
 
 // NewFileAuditLogger opens (or creates) the audit log file at path and
 // returns an AuditLogger that writes JSON-lines to it. The parent
-// directory is created if missing. Returns an error if the file cannot be
-// opened; callers should fall back to a logger-based audit logger in that
-// case.
+// directory is created with mode 0o700 if missing — the audit log
+// contains user IPs, usernames, and security-relevant actions (login
+// success/failure, user/role/permission mutations, backup/restore), all
+// of which are PII or compliance-relevant. Restricting the directory to
+// the gonacos process user is defense in depth: an attacker with shell
+// access as another user on the host cannot traverse into the audit
+// directory to read or tamper with the trail. MkdirAll only sets the mode
+// on directories it creates; pre-existing directories keep their mode.
+//
+// Returns an error if the file cannot be opened; callers should fall back
+// to a logger-based audit logger in that case.
 func NewFileAuditLogger(path string) (AuditLogger, error) {
 	if path == "" {
 		return nil, errAuditPathEmpty
 	}
 	if dir := filepath.Dir(path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return nil, err
 		}
 	}

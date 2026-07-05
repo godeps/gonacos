@@ -137,6 +137,37 @@ type fileAuditLogger struct {
 	mu   sync.Mutex
 	path string
 	f    *os.File
+	// metrics records write-failure counters so operators can alert
+	// from /metrics when the audit pipeline is silently dropping
+	// events. Nil when no registry is wired (tests, embedders that
+	// opted out of observability) — the stderr fallback still fires.
+	metrics *observability.Registry
+}
+
+// SetMetricsRegistry wires the registry that fileAuditLogger uses to
+// count write failures. Called from [server.buildAuditLogger] after
+// construction. Nil registry means no metrics — the stderr fallback
+// still fires on failure, but /metrics won't surface the issue.
+//
+// The metric exposed is gonacos_audit_write_failures_total{reason}
+// where reason is "open" (file couldn't be opened/reopened),
+// "marshal" (JSON encoding failed — should never happen for an
+// AuditEvent), or "write" (the underlying Write call failed —
+// disk full, permission revoked, NFS mount dropped).
+func (l *fileAuditLogger) SetMetricsRegistry(r *observability.Registry) {
+	l.metrics = r
+}
+
+// recordFailure increments the write-failure counter for the given
+// reason. Best-effort: a nil registry or a malformed reason string is
+// silently dropped — metrics must not break the actual audit call.
+func (l *fileAuditLogger) recordFailure(reason string) {
+	if l.metrics == nil {
+		return
+	}
+	l.metrics.Counter("gonacos_audit_write_failures_total",
+		map[string]string{"reason": reason},
+	).Inc()
 }
 
 // NewFileAuditLogger opens (or creates) the audit log file at path and
@@ -165,7 +196,17 @@ func NewFileAuditLogger(path string) (AuditLogger, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &fileAuditLogger{path: path, f: f}, nil
+	fl := &fileAuditLogger{path: path, f: f}
+	// Pick up the package-level registry when set so fileAuditLogger
+	// counts write failures without forcing every caller to wire
+	// SetMetricsRegistry separately. The registry is set by
+	// [SetAuditMetricsRegistry] from server.New before [NewFileAuditLogger]
+	// is called via [buildAuditLogger]. Nil registry means no metrics —
+	// the stderr fallback still fires on failure.
+	if AuditMetricsRegistry != nil {
+		fl.metrics = AuditMetricsRegistry
+	}
+	return fl, nil
 }
 
 // errAuditPathEmpty signals NewFileAuditLogger was called with an empty path.
@@ -182,6 +223,7 @@ func (l *fileAuditLogger) Log(e AuditEvent) {
 		// Reopen on demand after a previous write failure.
 		f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
+			l.recordFailure("open")
 			fmt.Fprintf(os.Stderr, "audit: reopen %s failed: %v\n", l.path, err)
 			return
 		}
@@ -189,11 +231,13 @@ func (l *fileAuditLogger) Log(e AuditEvent) {
 	}
 	line, err := json.Marshal(e)
 	if err != nil {
+		l.recordFailure("marshal")
 		fmt.Fprintf(os.Stderr, "audit: marshal failed: %v\n", err)
 		return
 	}
 	line = append(line, '\n')
 	if _, err := l.f.Write(line); err != nil {
+		l.recordFailure("write")
 		fmt.Fprintf(os.Stderr, "audit: write %s failed: %v\n", l.path, err)
 		_ = l.f.Close()
 		l.f = nil
@@ -385,4 +429,21 @@ func (m *metricsAuditLogger) Log(e AuditEvent) {
 		"result": string(e.Result),
 	}).Inc()
 	m.next.Log(e)
+}
+
+// Reopen delegates to the wrapped logger when it implements
+// [AuditLogReopener]. metricsAuditLogger holds no file descriptor of
+// its own — it only counts events — so rotation must be handled by
+// the underlying fileAuditLogger. Without this delegation,
+// [Server.ReopenAuditLog]'s type assertion against the outermost
+// AuditLogger (the metricsAuditLogger) would fail to find
+// AuditLogReopener, and SIGHUP-based log rotation would silently
+// no-op — the file descriptor would never be swapped and the
+// renamed inode would keep receiving events while the new audit.log
+// stayed empty.
+func (m *metricsAuditLogger) Reopen() error {
+	if r, ok := m.next.(AuditLogReopener); ok {
+		return r.Reopen()
+	}
+	return nil
 }

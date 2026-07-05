@@ -63,6 +63,17 @@ func New(opts ...Option) (*Server, error) {
 		opt(&o)
 	}
 	logger := o.resolveLogger()
+	// Construct the observability registry and wire it into the audit
+	// pipeline BEFORE building the audit logger. buildAuditLogger calls
+	// app.WrapWithMetrics, which checks the package-level
+	// AuditMetricsRegistry — if it is nil at construction time the
+	// metrics wrapper is a no-op and gonacos_audit_events_total is never
+	// incremented. The same registry is picked up by NewFileAuditLogger
+	// so fileAuditLogger counts write failures as
+	// gonacos_audit_write_failures_total{reason}. The Redis metrics hook
+	// is wired later, after the Redis client is constructed.
+	registry := observability.NewRegistry()
+	app.SetAuditMetricsRegistry(registry)
 
 	bundle := app.NewServiceBundleWithAuthSecret(o.resolveAuthSecret())
 	// Wire the server logger as the audit sink so security-relevant
@@ -109,16 +120,8 @@ func New(opts ...Option) (*Server, error) {
 	// both external and embedded clients — embedded mode still benefits
 	// from per-command latency visibility (a slow command against the
 	// in-memory store signals a hot path or a regression). The registry
-	// is constructed below, so we add the hook after the registry is
-	// available.
-	registry := observability.NewRegistry()
-	// Wire the audit-event counter before constructing the audit
-	// logger so WrapWithMetrics can find the registry. Audit events
-	// increment gonacos_audit_events_total{action,result} — the
-	// alerting signal for "audit rate spiked" (brute-force login,
-	// permission scan). Set before buildAuditLogger below so the
-	// wrapper picks it up.
-	app.SetAuditMetricsRegistry(registry)
+	// was constructed and wired into the audit pipeline above, before
+	// buildAuditLogger ran.
 	redisClient.AddHook(newRedisMetricsHook(registry))
 
 	persist := store.NewRedisPersistence(redisClient, coord, dumpPath)

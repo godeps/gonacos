@@ -152,3 +152,44 @@ func TestMetricsAuditLoggerExposedInPrometheusOutput(t *testing.T) {
 		t.Errorf("result label missing: %s", out)
 	}
 }
+
+// TestMetricsAuditLoggerReopenDelegates verifies that the metrics
+// wrapper delegates Reopen to the wrapped logger so SIGHUP-based log
+// rotation still works when the audit pipeline is wrapped with
+// [WrapWithMetrics].
+//
+// Without this delegation, [Server.ReopenAuditLog]'s type assertion
+// against the outermost AuditLogger (the metricsAuditLogger) would
+// fail to find AuditLogReopener, and the file descriptor would never
+// be swapped — logrotate would rename audit.log to audit.log.1, send
+// SIGHUP, and the renamed inode would keep receiving events while
+// the new audit.log stayed empty.
+func TestMetricsAuditLoggerReopenDelegates(t *testing.T) {
+	defer func() { AuditMetricsRegistry = nil }()
+	registry := observability.NewRegistry()
+	SetAuditMetricsRegistry(registry)
+
+	inner := &reopenCaptureLogger{}
+	wrapped := WrapWithMetrics(inner)
+
+	if err := wrapped.(AuditLogReopener).Reopen(); err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+	if !inner.reopened {
+		t.Errorf("Reopen did not delegate to the wrapped logger (SIGHUP rotation would be a silent no-op)")
+	}
+}
+
+// reopenCaptureLogger is an AuditLogger that records whether Reopen
+// was called. Used by TestMetricsAuditLoggerReopenDelegates to verify
+// the metrics wrapper delegates Reopen to the wrapped logger.
+type reopenCaptureLogger struct {
+	reopened bool
+}
+
+func (r *reopenCaptureLogger) Log(AuditEvent) {}
+
+func (r *reopenCaptureLogger) Reopen() error {
+	r.reopened = true
+	return nil
+}

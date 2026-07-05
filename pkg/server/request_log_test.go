@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -232,5 +233,77 @@ func TestRequestLogMiddlewareRecordsResponseBytes(t *testing.T) {
 	wantCount := fmt.Sprintf("gonacos_http_response_bytes_count%s 1", `{method="GET"}`)
 	if !strings.Contains(out, wantCount) {
 		t.Fatalf("response bytes count mismatch: want %q in %s", wantCount, out)
+	}
+}
+
+// TestRequestLogMiddlewareRecordsRequestBytes verifies that when a metrics
+// registry is wired in, each request records gonacos_http_request_bytes
+// with the correct method label. Operators use this to spot a peer
+// sending oversized requests (resource exhaustion vector) and to
+// estimate ingress bandwidth.
+func TestRequestLogMiddlewareRecordsRequestBytes(t *testing.T) {
+	var buf bytes.Buffer
+	logger := stubLogger{buf: &buf}
+	registry := observability.NewRegistry()
+	body := []byte(`{"data":"hello request body"}`)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Drain the body so countingReader records non-zero bytes.
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+	})
+	mw := newRequestLogMiddleware(logger, false, registry, inner)
+
+	req := httptest.NewRequest(http.MethodPost, "/v3/cs/configs", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+
+	_ = registry.Histogram("gonacos_http_request_bytes",
+		map[string]string{"method": "POST"},
+		[]float64{100, 256, 512})
+	var promBuf bytes.Buffer
+	registry.WritePrometheus(&promBuf)
+	out := promBuf.String()
+	if !strings.Contains(out, "gonacos_http_request_bytes") {
+		t.Fatalf("request bytes histogram not exposed in /metrics output: %s", out)
+	}
+	// The sum line should carry the request body length.
+	wantSum := fmt.Sprintf("gonacos_http_request_bytes_sum%s %d", `{method="POST"}`, len(body))
+	if !strings.Contains(out, wantSum) {
+		t.Fatalf("request bytes sum mismatch: want %q in %s", wantSum, out)
+	}
+	// The count line should carry 1 (one observation).
+	wantCount := fmt.Sprintf("gonacos_http_request_bytes_count%s 1", `{method="POST"}`)
+	if !strings.Contains(out, wantCount) {
+		t.Fatalf("request bytes count mismatch: want %q in %s", wantCount, out)
+	}
+}
+
+// TestRequestLogMiddlewareRequestBytesZeroForBodyless verifies that a
+// request with no body (GET) records 0 for gonacos_http_request_bytes,
+// distinct from a small POST payload. This lets operators filter out
+// bodyless requests when analyzing ingress payload distribution.
+func TestRequestLogMiddlewareRequestBytesZeroForBodyless(t *testing.T) {
+	var buf bytes.Buffer
+	logger := stubLogger{buf: &buf}
+	registry := observability.NewRegistry()
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mw := newRequestLogMiddleware(logger, false, registry, inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/v3/cs/configs", nil)
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+
+	_ = registry.Histogram("gonacos_http_request_bytes",
+		map[string]string{"method": "GET"},
+		[]float64{100, 256, 512})
+	var promBuf bytes.Buffer
+	registry.WritePrometheus(&promBuf)
+	out := promBuf.String()
+	// GET requests have no body, so the sum should be 0.
+	wantSum := fmt.Sprintf("gonacos_http_request_bytes_sum%s 0", `{method="GET"}`)
+	if !strings.Contains(out, wantSum) {
+		t.Fatalf("request bytes sum for bodyless GET: want %q in %s", wantSum, out)
 	}
 }

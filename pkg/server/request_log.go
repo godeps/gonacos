@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -168,6 +169,26 @@ func (r *statusRecorder) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// countingReader wraps an io.ReadCloser to count bytes read, for the
+// gonacos_http_request_bytes histogram. The wrapper is transparent —
+// it forwards Read() and Close() to the underlying reader while
+// tallying bytes read. Handlers read through this wrapper; the count
+// is observed after the handler returns. A request with no body
+// (GET, DELETE) observes 0; a POST with a JSON payload observes the
+// payload size. chunked-encoded bodies that lack Content-Length are
+// still tracked correctly because the wrapper counts actual bytes
+// read, not the Content-Length header.
+type countingReader struct {
+	io.ReadCloser
+	n int64
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	r.n += int64(n)
+	return n, err
+}
+
 func (m *requestLogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !m.verbose {
 		if _, skip := m.exclude[r.URL.Path]; skip {
@@ -176,6 +197,16 @@ func (m *requestLogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	start := time.Now()
+	// Wrap the request body so we can record the request byte count
+	// for gonacos_http_request_bytes. The wrapper is transparent —
+	// handlers read through it normally; the byte count is read
+	// after the handler returns. GET/DELETE requests with no body
+	// observe 0.
+	var cr *countingReader
+	if r.Body != nil {
+		cr = &countingReader{ReadCloser: r.Body}
+		r.Body = cr
+	}
 	rec := &statusRecorder{ResponseWriter: w, status: 0}
 	m.next.ServeHTTP(rec, r)
 	if rec.status == 0 {
@@ -212,6 +243,20 @@ func (m *requestLogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			map[string]string{"method": r.Method},
 			grpcsrv.HTTPBytesBuckets(),
 		).Observe(int64(rec.bytes))
+		// Request size distribution. The counter is the byte count
+		// read from the request body. Operators use this to spot a
+		// peer sending oversized requests (resource exhaustion
+		// vector when maxBodyMiddleware is generous) and to estimate
+		// ingress bandwidth. GET/DELETE requests with no body
+		// observe 0 — distinct from a small POST payload.
+		var reqN int64
+		if cr != nil {
+			reqN = cr.n
+		}
+		m.registry.Histogram("gonacos_http_request_bytes",
+			map[string]string{"method": r.Method},
+			grpcsrv.HTTPBytesBuckets(),
+		).Observe(reqN)
 	}
 }
 

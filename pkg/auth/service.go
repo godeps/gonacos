@@ -10,10 +10,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 const (
@@ -539,6 +543,19 @@ func (s *Service) Login(username, password string) (LoginResult, error) {
 	if !verifyPassword(password, user.Salt, user.Password) {
 		return LoginResult{}, ErrInvalidCredentials
 	}
+	// Transparently migrate legacy SHA-256 hashes to bcrypt on successful
+	// login. This upgrades security without requiring a password reset:
+	// the user types their password, we verify against the legacy hash,
+	// and if it matches we re-hash with bcrypt and persist the upgrade.
+	// A failed migration (rare — bcrypt only fails on empty/overlong
+	// input) does not block the login; the next login retries.
+	if isLegacyHash(user.Password) {
+		if newSalt, newHash, err := hashPassword(password); err == nil {
+			user.Salt = newSalt
+			user.Password = newHash
+			s.users[username] = user
+		}
+	}
 	roles := s.userRoles[username]
 	token, err := s.tokens.issue(username, user.GlobalAdmin, roles, DefaultTokenTTL)
 	if err != nil {
@@ -661,23 +678,72 @@ func createUserLocked(username, password string, globalAdmin bool) (*User, error
 	}, nil
 }
 
-// hashPassword generates a random salt and returns the salt and the
-// salted SHA-256 hash of the password. Production deployments should
-// swap this for bcrypt; the in-memory store keeps the zero-dependency
-// contract.
-func hashPassword(password string) (string, string, error) {
-	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		return "", "", err
-	}
-	saltHex := hex.EncodeToString(salt)
-	hash := sha256Hex(saltHex + password)
-	return saltHex, hash, nil
+// Password hash format:
+//   - New passwords: "bcrypt$<bcrypt-hash>" — bcrypt includes its own salt
+//     and a per-hash cost factor, so the Salt field on User is unused for
+//     bcrypt hashes (kept for snapshot backward compatibility).
+//   - Legacy snapshots: 64-char hex SHA-256 hash with a separate 32-char
+//     hex salt. Single-iteration SHA-256 is fast enough that a leaked
+//     snapshot is brute-forceable on commodity GPUs; this format is kept
+//     only so existing snapshots verify, and is migrated to bcrypt on
+//     the next successful login (see [Service.Login]).
+const (
+	// hashPrefixBcrypt identifies bcrypt-hashed passwords. Legacy SHA-256
+	// hashes have no prefix.
+	hashPrefixBcrypt = "bcrypt$"
+)
+
+// bcryptCost is the work factor for new bcrypt hashes. The default (12) is
+// lazily overridable via the GONACOS_BCRYPT_COST env var so tests can
+// lower it to bcrypt.MinCost (4) for fast iteration without changing
+// production security. 12 strikes a balance: ~250ms verify on modern
+// hardware, slow enough to make offline brute-force painful, fast enough
+// that interactive login does not feel laggy.
+var (
+	bcryptCostOnce sync.Once
+	bcryptCostVal  int
+)
+
+func bcryptCost() int {
+	bcryptCostOnce.Do(func() {
+		bcryptCostVal = 12
+		if v := os.Getenv("GONACOS_BCRYPT_COST"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n >= bcrypt.MinCost && n <= bcrypt.MaxCost {
+				bcryptCostVal = n
+			}
+		}
+	})
+	return bcryptCostVal
 }
 
+// hashPassword generates a bcrypt hash of the password. Returns salt=""
+// (bcrypt includes its own salt) and hash="bcrypt$<bcrypt-hash>".
+func hashPassword(password string) (string, string, error) {
+	h, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost())
+	if err != nil {
+		return "", "", err
+	}
+	return "", hashPrefixBcrypt + string(h), nil
+}
+
+// verifyPassword returns true if password matches the stored hash. Dispatches
+// on the hash format: bcrypt$-prefixed uses bcrypt; plain hex uses the
+// legacy SHA-256 scheme for backward compatibility with existing snapshots.
+// Both paths use constant-time comparison.
 func verifyPassword(password, salt, hash string) bool {
+	if strings.HasPrefix(hash, hashPrefixBcrypt) {
+		bhash := strings.TrimPrefix(hash, hashPrefixBcrypt)
+		return bcrypt.CompareHashAndPassword([]byte(bhash), []byte(password)) == nil
+	}
 	candidate := sha256Hex(salt + password)
 	return subtle.ConstantTimeCompare([]byte(candidate), []byte(hash)) == 1
+}
+
+// isLegacyHash returns true if the stored hash is in the pre-bcrypt SHA-256
+// format (no algorithm prefix). Login uses this to decide whether to
+// transparently re-hash the password with bcrypt after a successful verify.
+func isLegacyHash(hash string) bool {
+	return !strings.HasPrefix(hash, hashPrefixBcrypt)
 }
 
 func sha256Hex(s string) string {

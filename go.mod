@@ -9,6 +9,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.5
 	github.com/redis/go-redis/v9 v9.21.0
+	golang.org/x/crypto v0.53.0
 	golang.org/x/time v0.12.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -116,7 +117,6 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/arch v0.23.0 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect

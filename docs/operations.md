@@ -110,6 +110,27 @@ A locked pair receives `429 Too Many Requests` with a `Retry-After` header
 without calling the login handler, so an attacker cannot probe passwords
 even if the underlying auth service is slow.
 
+### Password storage
+
+User passwords are hashed with bcrypt (cost 12 by default) before being
+stored in the in-memory user registry and persisted to snapshots. Bcrypt
+includes a per-hash random salt and an adaptive work factor, so a leaked
+snapshot does not yield to offline brute-force or rainbow-table attacks
+the way a single-iteration hash would.
+
+Snapshots written by earlier gonacos versions stored passwords as
+single-iteration SHA-256 with a separate salt. These legacy hashes still
+verify (the format is detected by the absence of the `bcrypt$` prefix),
+and on the next successful login the user's password is transparently
+re-hashed with bcrypt and the upgraded hash is persisted on the next
+snapshot save. No password reset is required.
+
+The bcrypt cost is tunable via the `GONACOS_BCRYPT_COST` env var for
+testing or hardware tuning; valid range is 4 (bcrypt minimum) to 31
+(bcrypt maximum). Values outside the range are ignored and the default
+(12) is used. Lower the cost only for test suites — production should
+keep 12 or higher.
+
 ### Request tracing
 
 Every response carries an `X-Request-Id` header (e.g.

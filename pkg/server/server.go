@@ -380,7 +380,7 @@ func New(opts ...Option) (*Server, error) {
 	// ALPN.
 	var tlsCfg *tls.Config
 	if certFile != "" && keyFile != "" {
-		reloader, err := NewCertReloader(certFile, keyFile)
+		reloader, err := NewCertReloaderWithMetrics(certFile, keyFile, registry)
 		if err != nil {
 			// Cleanup everything wired before this point so a TLS
 			// misconfiguration doesn't leak ports, Redis connections,

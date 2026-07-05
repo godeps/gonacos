@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/godeps/gonacos/pkg/observability"
 )
 
 // writeTestCert generates a self-signed ECDSA cert+key pair and writes it
@@ -173,4 +175,109 @@ func TestCertReloader_ConcurrentAccess(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestCertReloader_MetricsExpiryGauges verifies that
+// NewCertReloaderWithMetrics wires the not_before/not_after gauges into
+// the registry and that the gauges reflect the leaf cert's validity
+// window. Operators alert on not_after < 30 days from now to catch
+// rotation failures before they cause an outage.
+func TestCertReloader_MetricsExpiryGauges(t *testing.T) {
+	certPath := filepath.Join(t.TempDir(), "cert.pem")
+	keyPath := filepath.Join(t.TempDir(), "key.pem")
+	notAfter := writeTestCert(t, certPath, keyPath)
+
+	registry := observability.NewRegistry()
+	r, err := NewCertReloaderWithMetrics(certPath, keyPath, registry)
+	if err != nil {
+		t.Fatalf("NewCertReloaderWithMetrics: %v", err)
+	}
+
+	naGauge := registry.Gauge("gonacos_tls_cert_not_after_timestamp", nil).Value()
+	if naGauge == 0 {
+		t.Fatal("not_after gauge not set after construction")
+	}
+	wantNA := notAfter.Unix()
+	if naGauge != wantNA {
+		t.Fatalf("not_after gauge = %d, want %d", naGauge, wantNA)
+	}
+
+	nbGauge := registry.Gauge("gonacos_tls_cert_not_before_timestamp", nil).Value()
+	if nbGauge == 0 {
+		t.Fatal("not_before gauge not set after construction")
+	}
+	// NotBefore is time.Now().Add(-time.Hour) in writeTestCert; we
+	// can't assert the exact value (clock skew), but it should be
+	// within a small window of "about an hour ago".
+	wantNB := time.Now().Add(-time.Hour).Unix()
+	delta := nbGauge - wantNB
+	if delta < -60 || delta > 60 {
+		t.Fatalf("not_before gauge = %d, want ~%d (delta %d)", nbGauge, wantNB, delta)
+	}
+
+	// Sanity: the leaf cert is the one we wrote.
+	if _, _, ok := r.certExpiry(); !ok {
+		t.Fatal("certExpiry() returned ok=false, want true")
+	}
+}
+
+// TestCertReloader_MetricsGaugesUpdateOnReload verifies that the expiry
+// gauges are updated when the cert is reloaded — a rotation that lands
+// a new cert with a later NotAfter is reflected immediately. This is
+// the property operators rely on: after rotation, the gauge shows the
+// new expiry so alerts clear.
+func TestCertReloader_MetricsGaugesUpdateOnReload(t *testing.T) {
+	certPath := filepath.Join(t.TempDir(), "cert.pem")
+	keyPath := filepath.Join(t.TempDir(), "key.pem")
+	firstNotAfter := writeTestCert(t, certPath, keyPath)
+
+	registry := observability.NewRegistry()
+	r, err := NewCertReloaderWithMetrics(certPath, keyPath, registry)
+	if err != nil {
+		t.Fatalf("NewCertReloaderWithMetrics: %v", err)
+	}
+
+	// Sanity: initial gauge matches first cert.
+	gotFirst := registry.Gauge("gonacos_tls_cert_not_after_timestamp", nil).Value()
+	if gotFirst != firstNotAfter.Unix() {
+		t.Fatalf("initial not_after = %d, want %d", gotFirst, firstNotAfter.Unix())
+	}
+
+	// Write a new cert with a different NotAfter (writeTestCert uses
+	// time.Now().Add(24h), so a second call lands a different value
+	// after the file mtime changes). Sleep 1.1s to guarantee the
+	// file mtime advances — many filesystems have second-level mtime
+	// precision, so sub-second writes can be missed.
+	time.Sleep(1100 * time.Millisecond)
+	secondNotAfter := writeTestCert(t, certPath, keyPath)
+
+	// Trigger a reload via GetCertificate (which checks mtime).
+	if _, err := r.GetCertificate(nil); err != nil {
+		t.Fatalf("GetCertificate: %v", err)
+	}
+
+	gotSecond := registry.Gauge("gonacos_tls_cert_not_after_timestamp", nil).Value()
+	if gotSecond != secondNotAfter.Unix() {
+		t.Fatalf("post-reload not_after = %d, want %d", gotSecond, secondNotAfter.Unix())
+	}
+	if gotSecond == gotFirst {
+		t.Fatal("not_after gauge did not change after reload — rotation not detected")
+	}
+}
+
+// TestCertReloader_NilRegistryNoop verifies that constructing the reloader
+// with a nil registry does not panic and still loads the cert. Production
+// callers that opt out of metrics must not crash.
+func TestCertReloader_NilRegistryNoop(t *testing.T) {
+	certPath := filepath.Join(t.TempDir(), "cert.pem")
+	keyPath := filepath.Join(t.TempDir(), "key.pem")
+	writeTestCert(t, certPath, keyPath)
+
+	r, err := NewCertReloaderWithMetrics(certPath, keyPath, nil)
+	if err != nil {
+		t.Fatalf("NewCertReloaderWithMetrics(nil): %v", err)
+	}
+	if _, err := r.GetCertificate(nil); err != nil {
+		t.Fatalf("GetCertificate: %v", err)
+	}
 }

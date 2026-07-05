@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net"
 	"sync"
 	"time"
 
@@ -14,17 +15,26 @@ import (
 //
 // Gauges exposed:
 //
-//	gonacos_namespaces_total   — number of namespaces
-//	gonacos_configs_total      — total config items across all namespaces
-//	gonacos_services_total     — total registered services across all namespaces
-//	gonacos_users_total        — number of registered users
-//	gonacos_instances_total    — total service instances across all services
-//	gonacos_grpc_connections   — active long-lived gRPC push connections
+//	gonacos_namespaces_total          — number of namespaces
+//	gonacos_configs_total             — total config items across all namespaces
+//	gonacos_services_total            — total registered services across all namespaces
+//	gonacos_users_total               — number of registered users
+//	gonacos_instances_total           — total service instances across all services
+//	gonacos_grpc_connections          — active long-lived gRPC push connections
+//	gonacos_active_connections{proto} — active TCP connections per protocol
+//	                                    (proto="http" or "grpc"); only populated
+//	                                    when [WithMaxConns] is set, since the
+//	                                    connection counter lives on the cap
+//	                                    wrapper. Without the cap, the gauge
+//	                                    stays at zero — operators who want
+//	                                    the metric should set a high cap
+//	                                    (e.g., 100000) to track without
+//	                                    effectively limiting.
 //
 // The collector is a no-op when registry or bundle is nil. Sampling is O(n)
 // on the in-memory store (bounded by the namespace quota), so at a 30s
 // default interval the overhead is negligible against the request hot path.
-func startResourceCollector(registry *observability.Registry, bundle *app.ServiceBundle, push *app.PushService, interval time.Duration) func() {
+func startResourceCollector(registry *observability.Registry, bundle *app.ServiceBundle, push *app.PushService, httpLn, grpcLn net.Listener, interval time.Duration) func() {
 	if registry == nil || bundle == nil {
 		return func() {}
 	}
@@ -35,6 +45,8 @@ func startResourceCollector(registry *observability.Registry, bundle *app.Servic
 		users       *observability.Gauge
 		instances   *observability.Gauge
 		connections *observability.Gauge
+		httpConns   *observability.Gauge
+		grpcConns   *observability.Gauge
 	}{
 		namespaces:  registry.Gauge("gonacos_namespaces_total", nil),
 		configs:     registry.Gauge("gonacos_configs_total", nil),
@@ -42,6 +54,8 @@ func startResourceCollector(registry *observability.Registry, bundle *app.Servic
 		users:       registry.Gauge("gonacos_users_total", nil),
 		instances:   registry.Gauge("gonacos_instances_total", nil),
 		connections: registry.Gauge("gonacos_grpc_connections", nil),
+		httpConns:   registry.Gauge("gonacos_active_connections", map[string]string{"proto": "http"}),
+		grpcConns:   registry.Gauge("gonacos_active_connections", map[string]string{"proto": "grpc"}),
 	}
 
 	refresh := func() {
@@ -78,6 +92,17 @@ func startResourceCollector(registry *observability.Registry, bundle *app.Servic
 			if reg := push.ConnectionRegistry(); reg != nil {
 				gauges.connections.Set(int64(reg.Count()))
 			}
+		}
+
+		// Active TCP connections per protocol. Only meaningful when
+		// [WithMaxConns] is set — the count lives on the maxConnsListener
+		// wrapper. Without the cap, the listeners are raw net.Listeners
+		// and the gauges stay at 0 (their initial value).
+		if ml, ok := httpLn.(*maxConnsListener); ok {
+			gauges.httpConns.Set(int64(ml.CurrentConns()))
+		}
+		if ml, ok := grpcLn.(*maxConnsListener); ok {
+			gauges.grpcConns.Set(int64(ml.CurrentConns()))
 		}
 	}
 

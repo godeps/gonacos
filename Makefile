@@ -73,7 +73,7 @@ setup: deps build
 	@echo "  Listen addr:   $(GONACOS_ADDR)"
 	@echo "  Data dir:      $(GONACOS_DATA_DIR)"
 	@echo "  Console UI:    http://localhost:8848/v3/console/ui"
-	@echo "  Default login: admin / nacos"
+	@echo "  Default login: nacos / nacos"
 
 # Start server in the background with a PID file. Ctrl-C (SIGINT) is
 # delivered to the whole process group, so gonacos shuts down via its
@@ -89,7 +89,7 @@ run: build runtime-dirs free-run-port
 	trap 'kill "$$pid" 2>/dev/null; rm -f "$(GONACOS_PID_FILE)"' EXIT INT TERM; \
 	echo "gonacos started (pid $$pid, listening on $(GONACOS_ADDR))"; \
 	echo "Console UI: http://localhost:$$PORT/v3/console/ui"; \
-	echo "Default login: admin / nacos"; \
+	echo "Default login: nacos / nacos"; \
 	echo "Stop with: make stop (or Ctrl-C)"; \
 	wait "$$pid"
 
@@ -150,7 +150,7 @@ help:
 	@echo "Listen addr:    $(GONACOS_ADDR)"
 	@echo "Data dir:       $(GONACOS_DATA_DIR)"
 	@echo "Console UI:     http://localhost:8848/v3/console/ui"
-	@echo "Default login:  admin / nacos"
+	@echo "Default login:  nacos / nacos"
 	@echo ""
 	@echo "Build:"
 	@echo "  make build       # build frontend + binaries"

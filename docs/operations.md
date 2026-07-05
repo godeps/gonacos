@@ -47,7 +47,14 @@ configs per namespace by default). HTTP-level limits protect against abuse:
   returns 429 with a `Retry-After` header.
 - **HTTP timeouts**: `ReadHeaderTimeout` 5s, `WriteTimeout`
   (`GONACOS_HTTP_WRITE_TIMEOUT`, default 30s), `IdleTimeout`
-  (`GONACOS_HTTP_IDLE_TIMEOUT`, default 120s).
+  (`GONACOS_HTTP_IDLE_TIMEOUT`, default 120s). The gRPC HTTP/2 server
+  also enforces `ReadHeaderTimeout` 5s (slowloris protection) and
+  `IdleTimeout` 5m.
+- **Shutdown timeout** (`GONACOS_SHUTDOWN_TIMEOUT`, default 30s): the
+  maximum time `Shutdown` waits for in-flight HTTP/gRPC handlers to
+  complete before forcibly closing connections. Prevents a stuck handler
+  from blocking a rolling restart indefinitely. Set to `-1` to wait
+  forever (not recommended in production).
 
 Operators running in production should monitor memory via the `/metrics`
 endpoint and restart the process if heap usage approaches the cgroup limit.
@@ -306,10 +313,16 @@ scrape_configs:
 ### Access log
 
 Each HTTP request is logged at INFO level with method, path, status, bytes,
-duration, and remote address. Health and metrics probes are excluded by
-default to keep the signal-to-noise ratio high. Set
+duration, remote address, and request ID. Health and metrics probes are
+excluded by default to keep the signal-to-noise ratio high. Set
 `GONACOS_HTTP_VERBOSE_LOG=1` or pass `WithHTTPVerboseLog(true)` to log
 every request including probes.
+
+Each gRPC request is logged similarly: `grpc <method> <path> status=<code>
+duration=<dur> remote=<addr>`. Unary RPCs log when the response is sent;
+streaming RPCs log when the stream closes (one line per connection, not
+per frame). The gRPC access log uses the same logger as the HTTP access
+log, so a single log stream covers both protocols.
 
 ### Process info
 

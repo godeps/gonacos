@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -42,6 +43,7 @@ type Server struct {
 	httpSrv       *http.Server
 	httpLn        net.Listener
 	grpcLn        net.Listener
+	tlsConfig     *tls.Config // non-nil when TLS is enabled; carries GetCertificate for hot reload
 	stopPeriodic  func()
 	stopRateGC    func()
 	stopResource  func()
@@ -265,6 +267,26 @@ func New(opts ...Option) (*Server, error) {
 		httpSrv.IdleTimeout = idleTimeout
 	}
 
+	// Build the TLS config once for both HTTP and gRPC. The CertReloader's
+	// GetCertificate callback re-reads the cert from disk when the file
+	// mtime changes, so operators can rotate certs by replacing the file
+	// — no restart, no dropped connections. NextProtos advertises h2 so
+	// the gRPC server (which shares this config) negotiates HTTP/2 via
+	// ALPN.
+	var tlsCfg *tls.Config
+	if certFile != "" && keyFile != "" {
+		reloader, err := NewCertReloader(certFile, keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load TLS cert: %w", err)
+		}
+		tlsCfg = &tls.Config{
+			GetCertificate: reloader.GetCertificate,
+			NextProtos:     []string{"h2", "http/1.1"},
+			MinVersion:     tls.VersionTLS12,
+		}
+		httpSrv.TLSConfig = tlsCfg
+	}
+
 	return &Server{
 		opts:          o,
 		logger:        logger,
@@ -279,6 +301,7 @@ func New(opts ...Option) (*Server, error) {
 		httpSrv:       httpSrv,
 		httpLn:        httpLn,
 		grpcLn:        grpcLn,
+		tlsConfig:     tlsCfg,
 		stopPeriodic:  stopPeriodic,
 		stopRateGC:    stopRateGC,
 		stopResource:  startResourceCollector(registry, bundle, push, 30*time.Second),
@@ -294,12 +317,11 @@ func New(opts ...Option) (*Server, error) {
 // return the actual bound addresses (useful when binding to :0) even before
 // Start returns.
 func (s *Server) Start(ctx context.Context) error {
-	certFile, keyFile := s.opts.resolveTLS()
 	errc := make(chan error, 2)
 	go func() {
 		var err error
-		if certFile != "" && keyFile != "" {
-			err = s.grpcSrv.ServeTLS(s.grpcLn, certFile, keyFile)
+		if s.tlsConfig != nil {
+			err = s.grpcSrv.ServeTLSConfig(s.grpcLn, s.tlsConfig)
 		} else {
 			err = s.grpcSrv.Serve(s.grpcLn)
 		}
@@ -311,8 +333,10 @@ func (s *Server) Start(ctx context.Context) error {
 	}()
 	go func() {
 		var err error
-		if certFile != "" && keyFile != "" {
-			err = s.httpSrv.ServeTLS(s.httpLn, certFile, keyFile)
+		if s.tlsConfig != nil {
+			// httpSrv.TLSConfig is set in New; ServeTLS with empty cert/key
+			// paths uses the configured TLSConfig (including GetCertificate).
+			err = s.httpSrv.ServeTLS(s.httpLn, "", "")
 		} else {
 			err = s.httpSrv.Serve(s.httpLn)
 		}

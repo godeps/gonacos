@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -280,6 +281,27 @@ func (s *Server) ServeTLS(ln net.Listener, certFile, keyFile string) error {
 	s.configureHTTP2(s.server)
 	s.mu.Unlock()
 	return s.server.ServeTLS(ln, certFile, keyFile)
+}
+
+// ServeTLSConfig runs the gRPC server with TLS on a pre-bound listener using
+// a pre-configured *tls.Config. This is the hot-reload path: callers pass a
+// Config whose GetCertificate callback reloads the cert from disk on file
+// change, so certificate rotation does not require a restart. The Config
+// must negotiate HTTP/2 via ALPN (h2) — callers should use
+// http2.ConfigureServer or append "h2" to NextProtos.
+func (s *Server) ServeTLSConfig(ln net.Listener, cfg *tls.Config) error {
+	s.mu.Lock()
+	s.listener = ln
+	s.server = &http.Server{
+		Handler:           s,
+		IdleTimeout:       5 * time.Minute,
+		ReadHeaderTimeout: 5 * time.Second,
+		TLSConfig:         cfg,
+	}
+	s.configureHTTP2(s.server)
+	s.mu.Unlock()
+	// Empty cert/key paths: http.Server.ServeTLS uses TLSConfig instead.
+	return s.server.ServeTLS(ln, "", "")
 }
 
 // configureHTTP2 wires [Server.KeepAlive] into the http.Server's HTTP/2

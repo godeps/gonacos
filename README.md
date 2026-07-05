@@ -227,6 +227,27 @@ configure them via options or env vars when running in production.
   declaring a larger frame is rejected with `RESOURCE_EXHAUSTED` before any
   body allocation, so a malicious client cannot drive the process into OOM
   by claiming a 4 GiB body. Matches the standard gRPC client default.
+- **gRPC rate limiting** (shares the HTTP limiter): the same per-IP
+  token-bucket covers both protocols, so an SDK client cannot bypass its
+  HTTP quota by switching to gRPC. Denied requests return
+  `RESOURCE_EXHAUSTED` without invoking the handler.
+- **gRPC slowloris protection**: the HTTP/2 server enforces
+  `ReadHeaderTimeout` 5s and `IdleTimeout` 5m, so a slow-reading or idle
+  peer cannot hold a connection open indefinitely.
+- **Shutdown timeout** (`WithShutdownTimeout`, default 30s): bounds the
+  graceful-shutdown window so a stuck handler cannot block a rolling
+  restart. In-flight handlers get up to 30s to complete; after that,
+  connections are forcibly closed.
+- **Request & latency metrics**: `gonacos_http_requests_total{method,status}`,
+  `gonacos_grpc_requests_total{method,status}`,
+  `gonacos_http_request_duration_seconds{method}`, and
+  `gonacos_grpc_request_duration_seconds{method}` let operators build
+  request-rate, error-rate, and p99-latency panels in Grafana without
+  parsing logs.
+- **Resource metrics**: `gonacos_namespaces_total`, `gonacos_configs_total`,
+  `gonacos_services_total`, `gonacos_instances_total`, `gonacos_users_total`,
+  and `gonacos_grpc_connections` expose current resource counts and active
+  push-stream counts so operators can see capacity at a glance.
 
 ## Project layout
 

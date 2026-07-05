@@ -170,6 +170,18 @@ type options struct {
 	// GONACOS_GRPC_MAX_HEADER_BYTES env var.
 	GRPCMaxHeaderBytes int
 
+	// GRPCMaxReadFrameSize caps the size of a single HTTP/2 frame the
+	// gRPC server will read. Zero falls back to 1 MiB (Go's http2.Server
+	// default; generous for legitimate Nacos SDK payloads — typical
+	// requests are <4 KiB). Negative disables the explicit cap (pass-
+	// through to http2 default). The cap bounds per-frame memory: a peer
+	// that sends a 16 MiB DATA frame forces a 16 MiB server-side buffer
+	// before the handler runs; with MaxConcurrentStreams=100, a single
+	// connection can hold 100 × 16 MiB = 1.6 GiB of in-flight frame
+	// buffers. Falls back to the GONACOS_GRPC_MAX_READ_FRAME_SIZE env
+	// var. Go's http2 stack clamps the value to [16 KiB, 16 MiB].
+	GRPCMaxReadFrameSize int
+
 	// MaxConns caps the total number of concurrent TCP connections the
 	// HTTP and gRPC servers accept. Zero falls back to resolveMaxConns
 	// (10000 default). A negative value disables the cap. When the cap is
@@ -720,6 +732,20 @@ func WithGRPCMaxHeaderBytes(n int) Option {
 	return func(o *options) { o.GRPCMaxHeaderBytes = n }
 }
 
+// WithGRPCMaxReadFrameSize caps the size of a single HTTP/2 frame the
+// gRPC server will read. Zero falls back to 1 MiB (Go's http2.Server
+// default; generous for legitimate Nacos SDK payloads — typical
+// requests are <4 KiB). Negative disables the explicit cap (pass-through
+// to http2 default). The cap bounds per-frame memory: a peer that sends
+// a 16 MiB DATA frame forces a 16 MiB server-side buffer before the
+// handler runs; with MaxConcurrentStreams=100, a single connection can
+// hold 100 × 16 MiB = 1.6 GiB of in-flight frame buffers. Falls back
+// to the GONACOS_GRPC_MAX_READ_FRAME_SIZE env var. Go's http2 stack
+// clamps the value to [16 KiB, 16 MiB].
+func WithGRPCMaxReadFrameSize(n int) Option {
+	return func(o *options) { o.GRPCMaxReadFrameSize = n }
+}
+
 func (o *options) resolveAddr() string {
 	if o.Addr != "" {
 		return o.Addr
@@ -1264,6 +1290,36 @@ func (o *options) resolveGRPCMaxHeaderBytes() int {
 		return o.GRPCMaxHeaderBytes
 	}
 	if v := os.Getenv("GONACOS_GRPC_MAX_HEADER_BYTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n != 0 {
+			return n
+		}
+	}
+	return 1 << 20
+}
+
+// resolveGRPCMaxReadFrameSize returns the per-frame size cap for the
+// gRPC server's HTTP/2 layer. Defaults to 1 MiB (matching Go's
+// http2.Server default and grpc-go's
+// defaultMaxReceiveMessageSize/DefaultMaxReadFrameSize; generous for
+// legitimate Nacos SDK traffic — typical config push frames are <16
+// KiB). A negative value is propagated as-is to grpcSrv.MaxReadFrameSize,
+// where grpc.Server.maxReadFrameSize() translates it to 0 — Go's
+// http2 stack then applies its own 1 MiB default (not recommended for
+// the same reason as MaxHeaderBytes: the explicit zero makes the cap
+// invisible). Falls back to GONACOS_GRPC_MAX_READ_FRAME_SIZE env var.
+//
+// The cap bounds per-frame memory allocation: a malicious peer sending
+// a 16 MiB frame forces the server to allocate a buffer that size
+// before the frame can be processed. With MaxConcurrentStreams=100,
+// an attacker can stack 100 such frames per connection, allocating
+// 1.6 GiB per connection before any handler runs. Tightening to e.g.
+// 256 KiB bounds this to 25 MiB per connection — still well above any
+// legitimate Nacos frame.
+func (o *options) resolveGRPCMaxReadFrameSize() int {
+	if o.GRPCMaxReadFrameSize != 0 {
+		return o.GRPCMaxReadFrameSize
+	}
+	if v := os.Getenv("GONACOS_GRPC_MAX_READ_FRAME_SIZE"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n != 0 {
 			return n
 		}

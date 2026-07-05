@@ -284,3 +284,53 @@ func TestResolveGRPCMaxHeaderBytesNegativeDisablesCap(t *testing.T) {
 		t.Errorf("negative resolveGRPCMaxHeaderBytes = %d, want -1 (pass-through)", got)
 	}
 }
+
+// TestResolveGRPCMaxReadFrameSizeDefault verifies that a zero options
+// struct resolves to 1 MiB — the frame-bomb defense default. Without
+// this cap, a peer sending a 16 MiB DATA frame forces the server to
+// allocate a buffer that size before the handler runs; stacked across
+// MaxConcurrentStreams connections, a single malicious peer exhausts
+// memory before any handler executes. The default matches Go's
+// http2.Server default and grpc-go's DefaultMaxReadFrameSize.
+func TestResolveGRPCMaxReadFrameSizeDefault(t *testing.T) {
+	o := options{}
+	got := o.resolveGRPCMaxReadFrameSize()
+	if got != 1<<20 {
+		t.Errorf("default resolveGRPCMaxReadFrameSize = %d, want %d (1 MiB)", got, 1<<20)
+	}
+}
+
+// TestResolveGRPCMaxReadFrameSizeExplicit verifies that an explicit
+// WithGRPCMaxReadFrameSize option wins over env vars and the default.
+func TestResolveGRPCMaxReadFrameSizeExplicit(t *testing.T) {
+	t.Setenv("GONACOS_GRPC_MAX_READ_FRAME_SIZE", "524288")
+	o := options{GRPCMaxReadFrameSize: 256 * 1024}
+	got := o.resolveGRPCMaxReadFrameSize()
+	if got != 256*1024 {
+		t.Errorf("explicit resolveGRPCMaxReadFrameSize = %d, want %d", got, 256*1024)
+	}
+}
+
+// TestResolveGRPCMaxReadFrameSizeEnv verifies that the env var is
+// picked up when the explicit option is unset.
+func TestResolveGRPCMaxReadFrameSizeEnv(t *testing.T) {
+	t.Setenv("GONACOS_GRPC_MAX_READ_FRAME_SIZE", "524288")
+	o := options{}
+	got := o.resolveGRPCMaxReadFrameSize()
+	if got != 524288 {
+		t.Errorf("env resolveGRPCMaxReadFrameSize = %d, want 524288", got)
+	}
+}
+
+// TestResolveGRPCMaxReadFrameSizeNegativeDisablesCap verifies that a
+// negative value is propagated as-is to grpcSrv.MaxReadFrameSize, where
+// grpc.Server.maxReadFrameSize() translates it to 0 (disabled). Mirrors
+// the resolveGRPCMaxHeaderBytes pattern: options-layer pass-through,
+// grpc.Server-layer normalization.
+func TestResolveGRPCMaxReadFrameSizeNegativeDisablesCap(t *testing.T) {
+	o := options{GRPCMaxReadFrameSize: -1}
+	got := o.resolveGRPCMaxReadFrameSize()
+	if got != -1 {
+		t.Errorf("negative resolveGRPCMaxReadFrameSize = %d, want -1 (pass-through)", got)
+	}
+}

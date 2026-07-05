@@ -212,6 +212,16 @@ func New(opts ...Option) (*Server, error) {
 	// Envoy's max_request_headers_kb; generous for legitimate Nacos
 	// SDK traffic — typical headers are <1 KB).
 	grpcSrv.MaxHeaderBytes = o.resolveGRPCMaxHeaderBytes()
+	// Per-frame HTTP/2 size cap for the gRPC server. This is the
+	// frame-bomb defense: without it, a peer sending a 16 MiB DATA
+	// frame forces the server to allocate a buffer that size before
+	// the handler runs. Stacked across MaxConcurrentStreams connections,
+	// a single malicious peer can exhaust memory before any handler
+	// executes. Defaults to 1 MiB (Go's http2 default); tightening to
+	// e.g. 256 KiB bounds per-connection memory to ~25 MiB at 100
+	// streams — still well above legitimate Nacos traffic (typical
+	// config push frames are <16 KiB).
+	grpcSrv.MaxReadFrameSize = o.resolveGRPCMaxReadFrameSize()
 	// Wire the same metrics registry into the gRPC server so
 	// gonacos_grpc_requests_total is exposed under /metrics alongside the
 	// HTTP and process metrics. A single scrape captures everything.
@@ -422,10 +432,21 @@ func New(opts ...Option) (*Server, error) {
 		if maxStreams < 0 {
 			maxStreams = 0
 		}
+		// Mirror the gRPC server's MaxReadFrameSize cap to the HTTP
+		// server's HTTP/2 layer. A negative value means "disable the
+		// explicit cap" — translate to 0 so Go's http2 stack applies
+		// its own 1 MiB default (uint32 of a negative would be ~4 GiB,
+		// which the http2 stack clamps to its max 16 MiB but is the
+		// wrong signal).
+		maxReadFrame := o.resolveGRPCMaxReadFrameSize()
+		if maxReadFrame < 0 {
+			maxReadFrame = 0
+		}
 		h2s := &http2.Server{
 			IdleTimeout:          httpSrv.IdleTimeout,
 			MaxConcurrentStreams: uint32(maxStreams),
 			WriteByteTimeout:     o.resolveGRPCWriteByteTimeout(),
+			MaxReadFrameSize:     uint32(maxReadFrame),
 		}
 		if ka := o.resolveGRPCKeepAlive(); ka.ReadIdleTimeout > 0 {
 			h2s.ReadIdleTimeout = ka.ReadIdleTimeout

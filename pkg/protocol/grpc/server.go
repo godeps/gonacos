@@ -234,6 +234,24 @@ type Server struct {
 	// 1 GiB). The cap is applied by Go's http2 stack via
 	// http.Server.MaxHeaderBytes.
 	MaxHeaderBytes int
+
+	// MaxReadFrameSize caps the size of a single HTTP/2 frame the server
+	// will read. Zero falls back to [DefaultMaxReadFrameSize] (1 MiB).
+	// A negative value disables the cap (pass-through to http2 default,
+	// also 1 MiB — included for consistency with MaxConcurrentStreams/
+	// MaxHeaderBytes, not because disabling is recommended).
+	//
+	// The cap bounds per-frame memory: a peer that sends a 16 MiB
+	// DATA frame forces the server to allocate a 16 MiB buffer before
+	// the handler runs. With MaxConcurrentStreams=100, a single
+	// connection can hold 100 × 16 MiB = 1.6 GiB of in-flight frame
+	// buffers. Lowering MaxReadFrameSize to e.g. 256 KiB tightens the
+	// per-connection blast radius; legitimate gRPC traffic (Nacos SDK
+	// payloads are typically <4 KiB) is unaffected.
+	//
+	// Go's http2 stack clamps the value to [16 KiB, 16 MiB]; values
+	// outside that range are silently adjusted by ConfigureServer.
+	MaxReadFrameSize int
 }
 
 // DefaultReadFrameTimeout is the per-frame read deadline when
@@ -257,6 +275,13 @@ const DefaultMaxConcurrentStreams = 100
 // handler runs. The cap is applied by Go's http2 stack via
 // http.Server.MaxHeaderBytes.
 const DefaultMaxHeaderBytes = 1 << 20
+
+// DefaultMaxReadFrameSize is the per-frame size cap when MaxReadFrameSize
+// is zero. 1 MiB matches Go's http2.Server default; it is generous for
+// legitimate gRPC traffic (Nacos SDK payloads are typically <4 KiB)
+// while bounding per-frame memory. Go's http2 stack clamps the value
+// to [16 KiB, 16 MiB].
+const DefaultMaxReadFrameSize = 1 << 20
 
 // KeepAliveConfig configures HTTP/2 keepalive PINGs. Zero values disable the
 // corresponding behavior.
@@ -358,6 +383,22 @@ func (s *Server) maxHeaderBytes() int {
 		return s.MaxHeaderBytes
 	}
 	return DefaultMaxHeaderBytes
+}
+
+// maxReadFrameSize returns the per-frame size cap, falling back to
+// DefaultMaxReadFrameSize when unset. A negative value disables the
+// cap (returns 0 — Go's http2 stack then applies its own 1 MiB default;
+// included for consistency with maxHeaderBytes, not because disabling
+// is recommended). The returned value is passed to http2.Server's
+// MaxReadFrameSize field, which Go clamps to [16 KiB, 16 MiB].
+func (s *Server) maxReadFrameSize() int {
+	if s.MaxReadFrameSize < 0 {
+		return 0
+	}
+	if s.MaxReadFrameSize != 0 {
+		return s.MaxReadFrameSize
+	}
+	return DefaultMaxReadFrameSize
 }
 
 // recordFrameReadTimeout increments gonacos_grpc_frame_read_timeouts_total
@@ -542,6 +583,7 @@ func (s *Server) configureHTTP2(srv *http.Server) {
 		IdleTimeout:          srv.IdleTimeout,
 		MaxConcurrentStreams: uint32(s.maxConcurrentStreams()),
 		WriteByteTimeout:     s.WriteByteTimeout,
+		MaxReadFrameSize:     uint32(s.maxReadFrameSize()),
 	}
 	if s.KeepAlive.ReadIdleTimeout > 0 {
 		h2s.ReadIdleTimeout = s.KeepAlive.ReadIdleTimeout

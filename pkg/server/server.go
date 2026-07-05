@@ -167,7 +167,12 @@ func New(opts ...Option) (*Server, error) {
 		return nil, fmt.Errorf("grpc listen %q: %w", grpcAddr, err)
 	}
 
-	httpHandler := app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry, readiness)
+	httpHandler := app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry, readiness, o.buildLoginThrottle())
+
+	// Request ID must be the outermost middleware so every response —
+	// including 429s from rate limiting and 413s from body caps — carries
+	// a correlation ID for log tracing.
+	httpHandler = newRequestIDMiddleware(httpHandler)
 
 	// Per-IP rate limiting. Disabled when rps <= 0. The background cleanup
 	// goroutine reaps idle buckets so the map doesn't grow unbounded under

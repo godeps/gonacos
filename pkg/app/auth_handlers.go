@@ -12,7 +12,7 @@ type authHandler struct {
 	service *auth.Service
 }
 
-func registerAuthRoutes(register func(string, string, http.HandlerFunc), service *auth.Service) {
+func registerAuthRoutes(register func(string, string, http.HandlerFunc), service *auth.Service, throttle *LoginThrottle) {
 	h := authHandler{service: service}
 
 	for _, base := range []string{"/v3/auth/user"} {
@@ -22,7 +22,11 @@ func registerAuthRoutes(register func(string, string, http.HandlerFunc), service
 		register(http.MethodPut, base, h.updateUser)
 		register(http.MethodGet, base+"/list", h.listUsers)
 		register(http.MethodGet, base+"/search", h.searchUsers)
-		register(http.MethodPost, base+"/login", h.login)
+		loginHandler := h.login
+		if throttle != nil {
+			loginHandler = newLoginThrottleMiddleware(throttle, h.login).ServeHTTP
+		}
+		register(http.MethodPost, base+"/login", loginHandler)
 	}
 	for _, base := range []string{"/v3/auth/role"} {
 		register(http.MethodPost, base, h.createRole)

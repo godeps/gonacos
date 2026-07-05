@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/godeps/gonacos/pkg/app"
 )
 
 type options struct {
@@ -34,6 +36,12 @@ type options struct {
 	// health/metrics probes). When false (default), noisy paths are
 	// excluded from the log but everything else is logged.
 	HTTPVerboseLog bool
+
+	// Login brute-force protection. Zero values disable throttling;
+	// non-zero values configure the (ip, username) lockout policy.
+	LoginMaxFailures     int
+	LoginFailWindow      time.Duration
+	LoginLockoutDuration time.Duration
 }
 
 // Option configures a Server at construction time. Pass to [New].
@@ -164,6 +172,19 @@ func WithHTTPVerboseLog(verbose bool) Option {
 	return func(o *options) { o.HTTPVerboseLog = verbose }
 }
 
+// WithLoginThrottle enables per-(client-IP, username) brute-force protection
+// on the /v3/auth/user/login endpoint. After maxFailures consecutive failed
+// logins within failWindow, the pair is locked for lockoutDuration. A
+// successful login resets the counter. Recommended production: 5 failures,
+// 5m window, 15m lockout. Pass maxFailures=0 to disable (default).
+func WithLoginThrottle(maxFailures int, failWindow, lockoutDuration time.Duration) Option {
+	return func(o *options) {
+		o.LoginMaxFailures = maxFailures
+		o.LoginFailWindow = failWindow
+		o.LoginLockoutDuration = lockoutDuration
+	}
+}
+
 func (o *options) resolveAddr() string {
 	if o.Addr != "" {
 		return o.Addr
@@ -248,6 +269,16 @@ func (o *options) resolveStrictSnapshot() bool {
 		return true
 	}
 	return false
+}
+
+// buildLoginThrottle constructs the per-(ip, username) brute-force limiter
+// from the server options. Returns nil when throttling is disabled
+// (maxFailures <= 0), so the handler builder leaves /login unwrapped.
+func (o *options) buildLoginThrottle() *app.LoginThrottle {
+	if o.LoginMaxFailures <= 0 {
+		return nil
+	}
+	return app.NewLoginThrottle(o.LoginMaxFailures, o.LoginFailWindow, o.LoginLockoutDuration)
 }
 
 // resolveHTTPRateRPS returns the configured per-IP rate limit (requests per

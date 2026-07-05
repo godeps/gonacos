@@ -84,13 +84,15 @@ func (m *requestLogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		rec.status = http.StatusOK
 	}
 	duration := time.Since(start)
-	m.logger.Infof("http %s %s status=%d bytes=%d duration=%s remote=%s",
+	rid := requestIDFromContext(r.Context())
+	m.logger.Infof("http %s %s status=%d bytes=%d duration=%s remote=%s rid=%s",
 		r.Method,
 		r.URL.RequestURI(),
 		rec.status,
 		rec.bytes,
 		formatDuration(duration),
 		r.RemoteAddr,
+		rid,
 	)
 }
 

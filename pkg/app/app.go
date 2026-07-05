@@ -107,19 +107,22 @@ func NewHandlerWithServices(root string, services *ServiceBundle) http.Handler {
 // save), the services are (re)registered into it so the HTTP backup/restore
 // endpoints and the persistence layer share the same coordinator.
 func NewHandlerWithServicesWithCoordinator(root string, services *ServiceBundle, coord *store.Coordinator) http.Handler {
-	return NewHandlerWithServicesAndRegistry(root, services, coord, nil, nil)
+	return NewHandlerWithServicesAndRegistry(root, services, coord, nil, nil, nil)
 }
 
 // NewHandlerWithServicesAndRegistry is like NewHandlerWithServicesWithCoordinator
-// but also accepts a shared *observability.Registry and a ReadinessChecker.
-// When registry is nil, a fresh registry is created (matching the legacy
-// behavior). When registry is non-nil (passed from the server, which also
-// wires it into the push service), the HTTP /metrics endpoint and the push
-// service share the same registry so scrapes see push-path counters alongside
-// the HTTP handlers' counters. When readiness is nil, the /readiness endpoints
-// always return 200/ok (matching the legacy behavior); pass a non-nil checker
-// (e.g., a Redis Ping) to return 503 when a dependency is unreachable.
-func NewHandlerWithServicesAndRegistry(root string, services *ServiceBundle, coord *store.Coordinator, registry *observability.Registry, readiness ReadinessChecker) http.Handler {
+// but also accepts a shared *observability.Registry, a ReadinessChecker, and
+// a *LoginThrottle. When registry is nil, a fresh registry is created
+// (matching the legacy behavior). When registry is non-nil (passed from the
+// server, which also wires it into the push service), the HTTP /metrics
+// endpoint and the push service share the same registry so scrapes see
+// push-path counters alongside the HTTP handlers' counters. When readiness
+// is nil, the /readiness endpoints always return 200/ok (matching the legacy
+// behavior); pass a non-nil checker (e.g., a Redis Ping) to return 503 when
+// a dependency is unreachable. When loginThrottle is nil, the /login
+// endpoint is unprotected; pass a non-nil throttle to lock (ip, username)
+// pairs after repeated failures.
+func NewHandlerWithServicesAndRegistry(root string, services *ServiceBundle, coord *store.Coordinator, registry *observability.Registry, readiness ReadinessChecker, loginThrottle *LoginThrottle) http.Handler {
 	if services == nil {
 		services = NewServiceBundle()
 	}
@@ -170,7 +173,7 @@ func NewHandlerWithServicesAndRegistry(root string, services *ServiceBundle, coo
 	registerNamespaceRoutes(register, namespaceSvc)
 	registerConfigRoutes(register, configSvc)
 	registerNamingRoutes(register, namingSvc)
-	registerAuthRoutes(register, authSvc)
+	registerAuthRoutes(register, authSvc, loginThrottle)
 	registerAIRoutes(register, aiSvc)
 	registerClusterRoutes(register, clusterSvc)
 	registerOpsRoutes(register, coord, registry)

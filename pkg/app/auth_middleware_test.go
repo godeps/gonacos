@@ -403,3 +403,83 @@ func TestAuthMiddlewareTokenValidationMetrics(t *testing.T) {
 		t.Fatalf("invalid counter = %d, want 2 (one bad token, one missing on admin route)", invalidCount)
 	}
 }
+
+// TestAuthMiddlewareRejectionMetrics verifies that the auth middleware
+// increments gonacos_auth_rejections_total{reason} with distinct reasons
+// for the three rejection modes:
+//   - missing_token — admin-only path with no token (misconfigured client
+//     or unauthenticated probe)
+//   - invalid_token — token presented but verification failed (brute-force
+//     or expired token)
+//   - access_denied — valid token but insufficient permissions (privilege
+//     escalation attempt)
+//
+// Without this distinction, operators see a single "invalid" counter that
+// conflates the three attack patterns and can't page the right on-call
+// (security for brute-force, client-team for misconfig, app-team for
+// privilege escalation). The legacy gonacos_token_validations_total is
+// kept for backward compatibility with existing dashboards.
+func TestAuthMiddlewareRejectionMetrics(t *testing.T) {
+	svc, adminToken, viewerToken := newAuthTestServices(t)
+	registry := observability.NewRegistry()
+	inner := echoHandler()
+	handler := newAuthMiddleware(svc, inner, registry)
+
+	// 1. invalid_token: bad token on a standard protected route.
+	req1 := httptest.NewRequest(http.MethodGet, "/v3/cs/configs", nil)
+	req1.Header.Set("Authorization", "Bearer not-a-real-token")
+	handler.ServeHTTP(httptest.NewRecorder(), req1)
+
+	// 2. missing_token: admin-only exact path, no token.
+	req2 := httptest.NewRequest(http.MethodGet, "/v3/auth/user/list", nil)
+	handler.ServeHTTP(httptest.NewRecorder(), req2)
+
+	// 3. missing_token: admin-only prefix path, no token.
+	req3 := httptest.NewRequest(http.MethodGet, "/v3/admin/core/namespace/list", nil)
+	handler.ServeHTTP(httptest.NewRecorder(), req3)
+
+	// 4. access_denied: valid non-admin token on admin-only exact path.
+	req4 := httptest.NewRequest(http.MethodGet, "/v3/auth/user/list", nil)
+	req4.Header.Set("Authorization", "Bearer "+viewerToken)
+	handler.ServeHTTP(httptest.NewRecorder(), req4)
+
+	// 5. access_denied: valid non-admin token on admin-only prefix path.
+	req5 := httptest.NewRequest(http.MethodGet, "/v3/admin/core/namespace/list", nil)
+	req5.Header.Set("Authorization", "Bearer "+viewerToken)
+	handler.ServeHTTP(httptest.NewRecorder(), req5)
+
+	// 6. Valid admin token on admin path — no rejection should fire.
+	req6 := httptest.NewRequest(http.MethodGet, "/v3/admin/core/namespace/list", nil)
+	req6.Header.Set("Authorization", "Bearer "+adminToken)
+	handler.ServeHTTP(httptest.NewRecorder(), req6)
+
+	missingToken := registry.Counter("gonacos_auth_rejections_total", map[string]string{"reason": "missing_token"}).Value()
+	invalidToken := registry.Counter("gonacos_auth_rejections_total", map[string]string{"reason": "invalid_token"}).Value()
+	accessDenied := registry.Counter("gonacos_auth_rejections_total", map[string]string{"reason": "access_denied"}).Value()
+
+	if missingToken != 2 {
+		t.Errorf("missing_token rejections = %d, want 2 (admin exact + admin prefix)", missingToken)
+	}
+	if invalidToken != 1 {
+		t.Errorf("invalid_token rejections = %d, want 1", invalidToken)
+	}
+	if accessDenied != 2 {
+		t.Errorf("access_denied rejections = %d, want 2 (admin exact + admin prefix)", accessDenied)
+	}
+}
+
+// TestAuthMiddlewareRejectionMetricsNilRegistryNoop verifies that the
+// rejection counters don't panic when the registry is nil — production
+// callers that opt out of metrics must not crash on auth rejection.
+func TestAuthMiddlewareRejectionMetricsNilRegistryNoop(t *testing.T) {
+	svc, _, _ := newAuthTestServices(t)
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v3/auth/user/list", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("nil registry should still reject: got %d, want 401", rec.Code)
+	}
+}

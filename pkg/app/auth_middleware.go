@@ -44,6 +44,16 @@ type authMiddleware struct {
 	next     http.Handler
 	tokenOK  *observability.Counter
 	tokenBad *observability.Counter
+	// rejectionMissingToken counts admin-only requests that arrived
+	// with no token at all — a missing-token on an open path is fine,
+	// but a missing token on /v3/admin/* is a misconfigured client or
+	// an unauthenticated probe. Distinct from rejectionInvalidToken
+	// (token presented but failed verification) and rejectionAccessDenied
+	// (valid token but insufficient permissions) so operators can
+	// distinguish the three attack patterns in /metrics.
+	rejectionMissingToken *observability.Counter
+	rejectionInvalidToken *observability.Counter
+	rejectionAccessDenied *observability.Counter
 }
 
 func newAuthMiddleware(auth *authsvc.Service, next http.Handler, registry *observability.Registry) http.Handler {
@@ -51,6 +61,9 @@ func newAuthMiddleware(auth *authsvc.Service, next http.Handler, registry *obser
 	if registry != nil {
 		mw.tokenOK = registry.Counter("gonacos_token_validations_total", map[string]string{"result": "valid"})
 		mw.tokenBad = registry.Counter("gonacos_token_validations_total", map[string]string{"result": "invalid"})
+		mw.rejectionMissingToken = registry.Counter("gonacos_auth_rejections_total", map[string]string{"reason": "missing_token"})
+		mw.rejectionInvalidToken = registry.Counter("gonacos_auth_rejections_total", map[string]string{"reason": "invalid_token"})
+		mw.rejectionAccessDenied = registry.Counter("gonacos_auth_rejections_total", map[string]string{"reason": "access_denied"})
 	}
 	return mw
 }
@@ -116,6 +129,9 @@ func (m *authMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if m.tokenBad != nil {
 				m.tokenBad.Inc()
 			}
+			if m.rejectionInvalidToken != nil {
+				m.rejectionInvalidToken.Inc()
+			}
 			writeAuthMiddlewareError(w, err)
 			return
 		}
@@ -131,10 +147,16 @@ func (m *authMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if m.tokenBad != nil {
 				m.tokenBad.Inc()
 			}
+			if m.rejectionMissingToken != nil {
+				m.rejectionMissingToken.Inc()
+			}
 			writeAuthMiddlewareError(w, authsvc.ErrInvalidToken)
 			return
 		}
 		if !claims.GlobalAdmin {
+			if m.rejectionAccessDenied != nil {
+				m.rejectionAccessDenied.Inc()
+			}
 			writeAuthMiddlewareError(w, authsvc.ErrAccessDenied)
 			return
 		}
@@ -145,10 +167,16 @@ func (m *authMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					if m.tokenBad != nil {
 						m.tokenBad.Inc()
 					}
+					if m.rejectionMissingToken != nil {
+						m.rejectionMissingToken.Inc()
+					}
 					writeAuthMiddlewareError(w, authsvc.ErrInvalidToken)
 					return
 				}
 				if !claims.GlobalAdmin {
+					if m.rejectionAccessDenied != nil {
+						m.rejectionAccessDenied.Inc()
+					}
 					writeAuthMiddlewareError(w, authsvc.ErrAccessDenied)
 					return
 				}

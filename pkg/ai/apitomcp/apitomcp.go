@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"text/template"
 	"time"
@@ -30,13 +31,65 @@ import (
 // Converter turns MCPConfig YAML into Backends.
 type Converter struct {
 	httpClient *http.Client
+	transport  *SafeTransport
 }
 
-// NewConverter creates a Converter with a default HTTP client.
+// NewConverter creates a Converter with the SSRF-safe HTTP client. The
+// default client rejects connections to private, loopback, and link-local
+// IP addresses so a malicious user-configured URL template cannot reach
+// internal services or cloud metadata endpoints. Set AllowPrivate on the
+// returned Converter's transport (via [Converter.WithAllowPrivate]) only
+// in trusted development environments.
 func NewConverter() *Converter {
+	transport := NewSafeTransport()
 	return &Converter{
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: transport.HTTPClient(30 * time.Second),
+		transport:  transport,
 	}
+}
+
+// NewConverterFromEnv returns a Converter configured via the
+// GONACOS_APITOMCP_ALLOW_PRIVATE environment variable. When set to "true"
+// (case-insensitive), the converter permits dials to private, loopback,
+// and link-local IPs — use this ONLY in trusted development environments
+// where the target MCP server runs on the same host or a private network.
+// Production deployments should leave the env var unset so SSRF
+// protection stays on.
+//
+// The env var is read at every call rather than cached at startup so
+// operators can toggle it via a config-reload signal that re-reads env
+// vars without restarting the process.
+func NewConverterFromEnv() *Converter {
+	conv := NewConverter()
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GONACOS_APITOMCP_ALLOW_PRIVATE")), "true") {
+		conv = conv.WithAllowPrivate()
+	}
+	return conv
+}
+
+// WithAllowPrivate enables private-IP access on the converter's HTTP client.
+// Use ONLY in trusted development environments where the target MCP server
+// runs on the same host or a private network that the gonacos process must
+// reach. Returns the converter for chaining.
+func (c *Converter) WithAllowPrivate() *Converter {
+	if c.transport != nil {
+		c.transport.AllowPrivate = true
+		c.httpClient = c.transport.HTTPClient(30 * time.Second)
+	}
+	return c
+}
+
+// WithAllowlist adds hostnames whose private-IP resolutions are permitted
+// (bypass the SSRF private-IP check). Use this when a specific internal MCP
+// server runs on a private network that the gonacos process must reach.
+// Hostnames not in the list still go through the normal SSRF check at dial
+// time. Empty list disables the bypass (default). Returns the converter
+// for chaining.
+func (c *Converter) WithAllowlist(hosts []string) *Converter {
+	if c.transport != nil {
+		c.transport.Allowlist = hosts
+	}
+	return c
 }
 
 // LoadYAML parses YAML bytes into a MCPConfig. The schema is the higress

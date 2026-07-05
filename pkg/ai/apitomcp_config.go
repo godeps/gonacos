@@ -81,7 +81,7 @@ func (s *apitomcpStore) replace(list []ApitomcpConfig) {
 // ValidateApitomcpYAML parses YAML and returns the server name + tool count
 // without persisting anything. Useful for pre-flight validation.
 func (s *Service) ValidateApitomcpYAML(yaml string) (serverName string, toolCount int, err error) {
-	conv := apitomcp.NewConverter()
+	conv := apitomcp.NewConverterFromEnv()
 	cfg, err := conv.LoadYAML([]byte(yaml))
 	if err != nil {
 		return "", 0, err
@@ -116,7 +116,7 @@ func (s *Service) CreateApitomcpConfig(yaml, description string) (*ApitomcpConfi
 	if strings.TrimSpace(yaml) == "" {
 		return nil, ErrApitomcpYAMLRequired
 	}
-	conv := apitomcp.NewConverter()
+	conv := apitomcp.NewConverterFromEnv()
 	parsed, err := conv.LoadYAML([]byte(yaml))
 	if err != nil {
 		return nil, fmt.Errorf("invalid apitomcp yaml: %w", err)
@@ -154,7 +154,7 @@ func (s *Service) UpdateApitomcpConfig(name, yaml, description string) (*Apitomc
 	if !ok {
 		return nil, ErrApitomcpConfigNotFound
 	}
-	conv := apitomcp.NewConverter()
+	conv := apitomcp.NewConverterFromEnv()
 	parsed, err := conv.LoadYAML([]byte(yaml))
 	if err != nil {
 		return nil, fmt.Errorf("invalid apitomcp yaml: %w", err)
@@ -203,7 +203,7 @@ func (s *Service) ApitomcpBackendFor(name string) (*apitomcp.ApiToMcpBackend, er
 	if err != nil {
 		return nil, err
 	}
-	conv := apitomcp.NewConverter()
+	conv := apitomcp.NewConverterFromEnv()
 	parsed, err := conv.LoadYAML([]byte(cfg.YAML))
 	if err != nil {
 		return nil, fmt.Errorf("stored yaml is invalid: %w", err)
@@ -224,7 +224,7 @@ func (s *Service) mountApitomcpBackend(cfg *models.MCPConfig) {
 	if s.router == nil {
 		return
 	}
-	conv := apitomcp.NewConverter()
+	conv := apitomcp.NewConverterFromEnv()
 	backend, err := conv.ToBackend(cfg, nil)
 	if err != nil {
 		return

@@ -103,7 +103,7 @@ func validateYAML(b []byte) error {
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
 		return err
 	}
-	conv := apitomcp.NewConverter()
+	conv := apitomcp.NewConverterFromEnv()
 	if _, err := conv.LoadYAML(b); err != nil {
 		return err
 	}

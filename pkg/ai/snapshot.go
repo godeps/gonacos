@@ -223,7 +223,7 @@ func (s *Service) Restore(data any) error {
 		s.apitomcp.replace(apitomcpCfgs)
 		// Remount backends on the router (if attached).
 		for _, cfg := range apitomcpCfgs {
-			conv := apitomcp.NewConverter()
+			conv := apitomcp.NewConverterFromEnv()
 			if parsed, err := conv.LoadYAML([]byte(cfg.YAML)); err == nil {
 				s.mountApitomcpBackend(parsed)
 			}

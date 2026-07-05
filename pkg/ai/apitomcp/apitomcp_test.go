@@ -55,7 +55,7 @@ func TestLoadYAMLAndCallTool(t *testing.T) {
 	}))
 	defer mock.Close()
 
-	conv := NewConverter()
+	conv := NewConverter().WithAllowPrivate()
 	cfg, err := conv.LoadYAML(sampleYAML(mock.URL))
 	if err != nil {
 		t.Fatalf("load: %v", err)
@@ -107,7 +107,7 @@ func TestLoadYAMLAndCallTool(t *testing.T) {
 // TestLoadYAMLRejectsMissingServerName verifies the validation guard.
 func TestLoadYAMLRejectsMissingServerName(t *testing.T) {
 	t.Parallel()
-	conv := NewConverter()
+	conv := NewConverter().WithAllowPrivate()
 	_, err := conv.LoadYAML([]byte(`
 server: {}
 tools:
@@ -124,7 +124,7 @@ tools:
 // at ToBackend time.
 func TestLoadYAMLRejectsMissingURL(t *testing.T) {
 	t.Parallel()
-	conv := NewConverter()
+	conv := NewConverter().WithAllowPrivate()
 	cfg, err := conv.LoadYAML([]byte(`
 server:
   name: api
@@ -145,7 +145,7 @@ tools:
 // TestToBackendRejectsNoTools verifies the empty-tools guard.
 func TestToBackendRejectsNoTools(t *testing.T) {
 	t.Parallel()
-	conv := NewConverter()
+	conv := NewConverter().WithAllowPrivate()
 	_, err := conv.ToBackend(nil, nil)
 	if err != ErrNilConfig {
 		t.Fatalf("err = %v, want %v", err, ErrNilConfig)
@@ -161,7 +161,7 @@ func TestApiToMcpBackendThroughRouter(t *testing.T) {
 	}))
 	defer mock.Close()
 
-	conv := NewConverter()
+	conv := NewConverter().WithAllowPrivate()
 	cfg, err := conv.LoadYAML([]byte(`
 server:
   name: pingapi
@@ -229,7 +229,7 @@ func TestApiToMcpBackendPostJSON(t *testing.T) {
 	}))
 	defer mock.Close()
 
-	conv := NewConverter()
+	conv := NewConverter().WithAllowPrivate()
 	cfg, err := conv.LoadYAML([]byte(`
 server:
   name: postapi
@@ -276,7 +276,7 @@ func TestApiToMcpBackendErrorResponse(t *testing.T) {
 	}))
 	defer mock.Close()
 
-	conv := NewConverter()
+	conv := NewConverter().WithAllowPrivate()
 	cfg, err := conv.LoadYAML([]byte(`
 server:
   name: errapi

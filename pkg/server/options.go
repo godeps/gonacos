@@ -62,6 +62,15 @@ type options struct {
 	// malicious peer can claim a 4 GiB body and drive the process into
 	// OOM before the handler runs).
 	GRPCMaxFrameBytes int
+
+	// MaxConns caps the total number of concurrent TCP connections the
+	// HTTP and gRPC servers accept. Zero falls back to resolveMaxConns
+	// (10000 default). A negative value disables the cap. When the cap is
+	// reached, new connections are immediately closed (the peer sees a
+	// reset) rather than queued — queuing would still hold the file
+	// descriptor, defeating the cap. Pair with the per-IP rate limiter
+	// for request-level protection.
+	MaxConns int
 }
 
 // Option configures a Server at construction time. Pass to [New].
@@ -232,6 +241,17 @@ func WithShutdownTimeout(d time.Duration) Option {
 // to disable the cap (not recommended in production).
 func WithGRPCMaxFrameBytes(bytes int) Option {
 	return func(o *options) { o.GRPCMaxFrameBytes = bytes }
+}
+
+// WithMaxConns caps the total number of concurrent TCP connections the
+// HTTP and gRPC servers accept. The default is 10000 — generous enough for
+// production traffic, low enough to prevent a connection-flood attack from
+// exhausting the process's file descriptor limit. When the cap is reached,
+// new connections are immediately closed. Pass a negative value to disable
+// the cap (not recommended in production). Pair with the per-IP rate
+// limiter for request-level protection.
+func WithMaxConns(max int) Option {
+	return func(o *options) { o.MaxConns = max }
 }
 
 func (o *options) resolveAddr() string {
@@ -500,6 +520,21 @@ func (o *options) resolveGRPCMaxFrameBytes() int {
 		}
 	}
 	return 4 * 1024 * 1024
+}
+
+// resolveMaxConns returns the concurrent-connection cap. Defaults to 10000
+// — generous enough for production, low enough to prevent fd exhaustion.
+// A negative return value disables the cap.
+func (o *options) resolveMaxConns() int {
+	if o.MaxConns != 0 {
+		return o.MaxConns
+	}
+	if v := os.Getenv("GONACOS_MAX_CONNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n != 0 {
+			return n
+		}
+	}
+	return 10000
 }
 
 // splitHostPort splits an address into host and port. Returns "127.0.0.1" and

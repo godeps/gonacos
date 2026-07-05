@@ -64,6 +64,12 @@ configs per namespace by default). HTTP-level limits protect against abuse:
   (gRPC status 8) before any body allocation, so a malicious client
   cannot drive the process into OOM by claiming a 4 GiB body. Set to
   `-1` to disable the cap (not recommended in production).
+- **Connection cap** (`GONACOS_MAX_CONNS`, default 10000): maximum
+  concurrent TCP connections across HTTP + gRPC. When the cap is reached,
+  new connections are immediately closed (the peer sees a reset) rather
+  than queued — queuing would still hold the file descriptor, defeating
+  the cap. Pair with the per-IP rate limiter for request-level protection.
+  Set to `-1` to disable (not recommended in production).
 
 Operators running in production should monitor memory via the `/metrics`
 endpoint and restart the process if heap usage approaches the cgroup limit.

@@ -182,6 +182,16 @@ func New(opts ...Option) (*Server, error) {
 		return nil, fmt.Errorf("grpc listen %q: %w", grpcAddr, err)
 	}
 
+	// Cap concurrent connections so a connection-flood attack cannot
+	// exhaust the process's file descriptor limit. The cap is shared
+	// across HTTP and gRPC because both listeners feed into the same
+	// process — a flood on either protocol can take down both.
+	maxConns := o.resolveMaxConns()
+	if maxConns > 0 {
+		httpLn = newMaxConnsListener(httpLn, maxConns)
+		grpcLn = newMaxConnsListener(grpcLn, maxConns)
+	}
+
 	httpHandler := app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry, readiness, o.buildLoginThrottle())
 
 	// Recovery wraps the innermost handler so panics produce a 500 JSON

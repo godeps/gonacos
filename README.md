@@ -146,6 +146,7 @@ Options (`server.With*`):
 | `WithSnapshotBackupCount(n)` | `0` (disabled) | Retain the prior N disk-dump snapshots as `snapshot.1.json`, `snapshot.2.json`, ... so a corrupted latest snapshot can be recovered. Recommended: `5`. |
 | `WithShutdownTimeout(d)` | `30s` | Maximum time Shutdown waits for in-flight handlers to complete before forcibly closing connections. Pass `-1` to wait forever (not recommended). |
 | `WithGRPCMaxFrameBytes(n)` | `4194304` (4 MiB) | Maximum payload size of a single gRPC frame the server accepts. A request declaring a larger frame is rejected with `RESOURCE_EXHAUSTED` before the body is read, preventing OOM attacks. Pass `-1` to disable (not recommended). |
+| `WithMaxConns(n)` | `10000` | Maximum concurrent TCP connections across HTTP + gRPC. When the cap is reached, new connections are immediately closed (reset). Prevents connection-flood attacks from exhausting the file descriptor limit. Pass `-1` to disable (not recommended). |
 
 Environment variable fallbacks (used when the corresponding option is not set):
 
@@ -168,6 +169,7 @@ Environment variable fallbacks (used when the corresponding option is not set):
 | `GONACOS_SNAPSHOT_BACKUP_COUNT` | `WithSnapshotBackupCount` (int; default `0` = no rotation) |
 | `GONACOS_SHUTDOWN_TIMEOUT` | `WithShutdownTimeout` (Go duration; default `30s`; `-1` = wait forever) |
 | `GONACOS_GRPC_MAX_FRAME_BYTES` | `WithGRPCMaxFrameBytes` (int bytes; default `4194304` = 4 MiB; `-1` = unlimited, not recommended) |
+| `GONACOS_MAX_CONNS` | `WithMaxConns` (int; default `10000`; `-1` = unlimited, not recommended) |
 
 ## Production hardening
 

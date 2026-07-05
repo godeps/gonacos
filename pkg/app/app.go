@@ -34,6 +34,11 @@ type ServiceBundle struct {
 	Auth      *authsvc.Service
 	AI        *aivsvc.Service
 	Cluster   *clustersvc.Service
+
+	// AuditLogger, when non-nil, receives security-relevant events
+	// (login, user/namespace/config CRUD, backup/restore). The HTTP
+	// handlers reach it through the bundle. Nil disables auditing.
+	AuditLogger AuditLogger
 }
 
 // NewServiceBundle builds a fresh set of service instances. Each service is
@@ -175,10 +180,10 @@ func NewHandlerWithServicesAndRegistry(root string, services *ServiceBundle, coo
 	registerNamespaceRoutes(register, namespaceSvc, configSvc)
 	registerConfigRoutes(register, configSvc)
 	registerNamingRoutes(register, namingSvc)
-	registerAuthRoutes(register, authSvc, loginThrottle)
+	registerAuthRoutes(register, authSvc, loginThrottle, services.AuditLogger)
 	registerAIRoutes(register, aiSvc)
 	registerClusterRoutes(register, clusterSvc)
-	registerOpsRoutes(register, coord, registry)
+	registerOpsRoutes(register, coord, registry, services.AuditLogger)
 	// Standard Prometheus scrape path (no /nacos prefix) so default
 	// prometheus.yml `metrics_path: /metrics` works without configuration.
 	RegisterPublicMetrics(mux, registry, metricsToken)

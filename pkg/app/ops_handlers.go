@@ -3,6 +3,7 @@ package app
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/pprof"
 	"runtime"
@@ -21,14 +22,16 @@ type opsHandler struct {
 	coordinator *store.Coordinator
 	registry    *observability.Registry
 	refresh     func()
+	audit       AuditLogger
 }
 
 func registerOpsRoutes(
 	register func(string, string, http.HandlerFunc),
 	coordinator *store.Coordinator,
 	registry *observability.Registry,
+	audit AuditLogger,
 ) {
-	h := opsHandler{coordinator: coordinator, registry: registry, refresh: nil}
+	h := opsHandler{coordinator: coordinator, registry: registry, refresh: nil, audit: audit}
 	if registry != nil {
 		h.refresh = registry.RegisterProcessMetrics()
 	}
@@ -139,6 +142,7 @@ func (h opsHandler) backup(w http.ResponseWriter, r *http.Request) {
 	}
 	env, err := h.coordinator.Snapshot()
 	if err != nil {
+		auditLog(h.audit, r, AuditActionBackup, "", err.Error(), AuditResultFailure)
 		protocol.WriteError(w, http.StatusInternalServerError, protocol.Error{
 			Code:    500,
 			Message: err.Error(),
@@ -147,12 +151,14 @@ func (h opsHandler) backup(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := json.MarshalIndent(env, "", "  ")
 	if err != nil {
+		auditLog(h.audit, r, AuditActionBackup, "", err.Error(), AuditResultFailure)
 		protocol.WriteError(w, http.StatusInternalServerError, protocol.Error{
 			Code:    500,
 			Message: err.Error(),
 		})
 		return
 	}
+	auditLog(h.audit, r, AuditActionBackup, "", fmt.Sprintf("services=%d", len(env.Services)), AuditResultSuccess)
 	filename := "gonacos-backup-" + time.Now().UTC().Format("20060102-150405") + ".json"
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
@@ -170,6 +176,7 @@ func (h opsHandler) restore(w http.ResponseWriter, r *http.Request) {
 	}
 	var env store.Envelope
 	if err := json.NewDecoder(r.Body).Decode(&env); err != nil {
+		auditLog(h.audit, r, AuditActionRestore, "", "invalid payload: "+err.Error(), AuditResultFailure)
 		protocol.WriteError(w, http.StatusBadRequest, protocol.Error{
 			Code:    protocol.CodeParameterValidateError,
 			Message: "invalid backup payload: " + err.Error(),
@@ -177,12 +184,14 @@ func (h opsHandler) restore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.coordinator.Restore(&env); err != nil {
+		auditLog(h.audit, r, AuditActionRestore, "", err.Error(), AuditResultFailure)
 		protocol.WriteError(w, http.StatusInternalServerError, protocol.Error{
 			Code:    500,
 			Message: err.Error(),
 		})
 		return
 	}
+	auditLog(h.audit, r, AuditActionRestore, "", fmt.Sprintf("services=%d", len(env.Services)), AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, map[string]any{
 		"version":    env.Version,
 		"services":   serviceNames(env.Services),

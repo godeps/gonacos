@@ -10,10 +10,11 @@ import (
 
 type authHandler struct {
 	service *auth.Service
+	audit   AuditLogger
 }
 
-func registerAuthRoutes(register func(string, string, http.HandlerFunc), service *auth.Service, throttle *LoginThrottle) {
-	h := authHandler{service: service}
+func registerAuthRoutes(register func(string, string, http.HandlerFunc), service *auth.Service, throttle *LoginThrottle, audit AuditLogger) {
+	h := authHandler{service: service, audit: audit}
 
 	for _, base := range []string{"/v3/auth/user"} {
 		register(http.MethodPost, base, h.createUser)
@@ -46,11 +47,14 @@ func (h authHandler) createUser(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	user, err := h.service.CreateUser(formValue(r, "username"), formValue(r, "password"))
+	username := formValue(r, "username")
+	user, err := h.service.CreateUser(username, formValue(r, "password"))
 	if err != nil {
+		auditLog(h.audit, r, AuditActionUserCreate, username, err.Error(), AuditResultFailure)
 		writeAuthError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionUserCreate, user.Username, "", AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, user.Username)
 }
 
@@ -70,10 +74,13 @@ func (h authHandler) deleteUser(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.DeleteUser(formValue(r, "username")); err != nil {
+	username := formValue(r, "username")
+	if err := h.service.DeleteUser(username); err != nil {
+		auditLog(h.audit, r, AuditActionUserDelete, username, err.Error(), AuditResultFailure)
 		writeAuthError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionUserDelete, username, "", AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, "delete user ok!")
 }
 
@@ -81,10 +88,13 @@ func (h authHandler) updateUser(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.UpdateUser(formValue(r, "username"), formValue(r, "newPassword")); err != nil {
+	username := formValue(r, "username")
+	if err := h.service.UpdateUser(username, formValue(r, "newPassword")); err != nil {
+		auditLog(h.audit, r, AuditActionUserUpdate, username, err.Error(), AuditResultFailure)
 		writeAuthError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionUserUpdate, username, "", AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, "update password ok!")
 }
 
@@ -121,10 +131,25 @@ func (h authHandler) login(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	result, err := h.service.Login(formValue(r, "username"), formValue(r, "password"))
+	username := formValue(r, "username")
+	result, err := h.service.Login(username, formValue(r, "password"))
 	if err != nil {
+		// Login runs before the auth middleware populates claims, so we
+		// synthesize the event with the form-supplied username. The IP
+		// still comes from the request.
+		if h.audit != nil {
+			event := withAuditUser(r, AuditActionLoginFailed, username)
+			event.Result = AuditResultFailure
+			event.Detail = err.Error()
+			h.audit.Log(event)
+		}
 		writeAuthError(w, err)
 		return
+	}
+	if h.audit != nil {
+		event := withAuditUser(r, AuditActionLogin, username)
+		event.Result = AuditResultSuccess
+		h.audit.Log(event)
 	}
 	w.Header().Set(auth.AuthorizationHeader, auth.TokenPrefix+result.AccessToken)
 	protocol.WriteResult(w, http.StatusOK, map[string]any{

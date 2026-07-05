@@ -62,6 +62,11 @@ func New(opts ...Option) (*Server, error) {
 	logger := o.resolveLogger()
 
 	bundle := app.NewServiceBundleWithAuthSecret(o.resolveAuthSecret())
+	// Wire the server logger as the audit sink so security-relevant
+	// events (login, user/namespace/config CRUD, backup/restore) land in
+	// the same log stream as access logs. A nil logger disables auditing
+	// (matching noopAuditLogger behavior).
+	bundle.AuditLogger = app.NewLoggerAuditLogger(logger)
 	coord := store.NewCoordinator()
 	coord.Register(bundle.Namespace)
 	coord.Register(bundle.Config)

@@ -50,7 +50,7 @@ func (m *recoveryMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			rid := requestIDFromContext(r.Context())
 			if m.logger != nil {
 				m.logger.Warnf("panic recovered: %v\n%s rid=%s %s %s",
-					rv, debug.Stack(), rid, r.Method, r.URL.RequestURI())
+					rv, debug.Stack(), rid, r.Method, sanitizeRequestURI(r.URL))
 			}
 			if m.panicCtr != nil {
 				m.panicCtr.Inc()

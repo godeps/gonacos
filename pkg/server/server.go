@@ -105,7 +105,7 @@ func New(opts ...Option) (*Server, error) {
 			}
 			return nil, fmt.Errorf("load snapshot (strict mode): %w", err)
 		}
-		logger.Warnf("load snapshot: %v (starting with empty state)", err)
+		logger.Errorf("load snapshot: %v (starting with empty state)", err)
 	} else {
 		logger.Infof("snapshot loaded")
 	}
@@ -352,7 +352,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return s.shutdownWithTimeout()
 	case err := <-errc:
 		if cerr := s.shutdownWithTimeout(); cerr != nil {
-			s.logger.Warnf("shutdown after serve error: %v", cerr)
+			s.logger.Errorf("shutdown after serve error: %v", cerr)
 		}
 		return err
 	}
@@ -385,7 +385,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.stopResource()
 	}
 	if err := s.persist.Save(ctx); err != nil {
-		s.logger.Warnf("save snapshot on shutdown: %v", err)
+		s.logger.Errorf("save snapshot on shutdown: %v", err)
 	}
 	if s.redisSync != nil {
 		_ = s.redisSync.Stop()

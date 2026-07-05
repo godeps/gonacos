@@ -66,11 +66,12 @@ func TestStdLoggerLevelFiltering(t *testing.T) {
 		level    LogLevel
 		infoWant bool // whether INFO line should appear
 		warnWant bool // whether WARN line should appear
+		errWant  bool // whether ERROR line should appear
 	}{
-		{"debug emits all", DebugLevel, true, true},
-		{"info emits all", InfoLevel, true, true},
-		{"warn suppresses info", WarnLevel, false, true},
-		{"error suppresses both", ErrorLevel, false, false},
+		{"debug emits all", DebugLevel, true, true, true},
+		{"info emits all", InfoLevel, true, true, true},
+		{"warn suppresses info", WarnLevel, false, true, true},
+		{"error suppresses info+warn", ErrorLevel, false, false, true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -81,15 +82,20 @@ func TestStdLoggerLevelFiltering(t *testing.T) {
 			}
 			lg.Infof("info msg %d", 1)
 			lg.Warnf("warn msg %d", 2)
+			lg.Errorf("err msg %d", 3)
 
 			got := buf.String()
 			hasInfo := strings.Contains(got, "INFO  info msg 1")
 			hasWarn := strings.Contains(got, "WARN  warn msg 2")
+			hasErr := strings.Contains(got, "ERROR err msg 3")
 			if hasInfo != c.infoWant {
 				t.Errorf("INFO line: got %v, want %v. buffer=%q", hasInfo, c.infoWant, got)
 			}
 			if hasWarn != c.warnWant {
 				t.Errorf("WARN line: got %v, want %v. buffer=%q", hasWarn, c.warnWant, got)
+			}
+			if hasErr != c.errWant {
+				t.Errorf("ERROR line: got %v, want %v. buffer=%q", hasErr, c.errWant, got)
 			}
 		})
 	}

@@ -65,6 +65,7 @@ func (l LogLevel) String() string {
 type Logger interface {
 	Infof(format string, args ...any)
 	Warnf(format string, args ...any)
+	Errorf(format string, args ...any)
 }
 
 // stdLogger adapts the standard log package to the Logger interface. It
@@ -90,6 +91,14 @@ func (s stdLogger) Warnf(format string, args ...any) {
 		return
 	}
 	s.l.Printf("WARN  "+format, args...)
+}
+
+// Errorf logs at ERROR level. Always emitted unless the level is set above
+// ERROR (which currently does not exist — ERROR is the highest). Use for
+// conditions that require operator attention: snapshot load failures, serve
+// errors, shutdown failures.
+func (s stdLogger) Errorf(format string, args ...any) {
+	s.l.Printf("ERROR "+format, args...)
 }
 
 // newStdLogger constructs a stdLogger at the given level, writing to stderr

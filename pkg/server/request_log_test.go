@@ -29,6 +29,12 @@ func (s stubLogger) Warnf(format string, args ...any) {
 	s.buf.WriteString("\n")
 }
 
+func (s stubLogger) Errorf(format string, args ...any) {
+	s.buf.WriteString("ERROR ")
+	s.buf.WriteString(fmt.Sprintf(format, args...))
+	s.buf.WriteString("\n")
+}
+
 // TestRequestLogMiddlewareDefaultExcludes verifies that the default exclude
 // list skips health/metrics probes while still logging everything else.
 func TestRequestLogMiddlewareDefaultExcludes(t *testing.T) {

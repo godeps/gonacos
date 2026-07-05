@@ -3,7 +3,6 @@ import type { RouteObject } from 'react-router-dom';
 import { Navigate } from 'react-router-dom';
 import { AuthGuard, AdminGuard, GuestGuard, AiGuard, getDefaultRoute } from './guards';
 import { useServerStore } from '@/stores/server-store';
-import UnsupportedFeature from '@/components/unsupported-feature';
 
 // Loading component
 function PageLoading() {
@@ -137,7 +136,7 @@ export const routes: RouteObject[] = [
             children: [
               {
                 path: 'clusterManagement',
-                element: <UnsupportedFeature featureName="Cluster Management" />,
+                element: lazyPage(() => import('@/pages/clusterManagement')),
               },
             ],
           },
@@ -167,67 +166,67 @@ export const routes: RouteObject[] = [
             children: [
               {
                 path: 'mcpServerManagement',
-                element: <UnsupportedFeature featureName="MCP Server Management" />,
+                element: lazyPage(() => import('@/pages/mcpServerManagement')),
               },
               {
                 path: 'mcpServerDetail',
-                element: <UnsupportedFeature featureName="MCP Server Detail" />,
+                element: lazyPage(() => import('@/pages/mcpServerDetail')),
               },
               {
                 path: 'newMcpServer',
-                element: <UnsupportedFeature featureName="New MCP Server" />,
+                element: lazyPage(() => import('@/pages/newMcpServer')),
               },
               {
                 path: 'agentManagement',
-                element: <UnsupportedFeature featureName="Agent Management" />,
+                element: lazyPage(() => import('@/pages/agentManagement')),
               },
               {
                 path: 'newAgent',
-                element: <UnsupportedFeature featureName="New Agent" />,
+                element: lazyPage(() => import('@/pages/newAgent')),
               },
               {
                 path: 'agentDetail',
-                element: <UnsupportedFeature featureName="Agent Detail" />,
+                element: lazyPage(() => import('@/pages/agentDetail')),
               },
               {
                 path: 'agentspec',
-                element: <UnsupportedFeature featureName="Agent Spec Management" />,
+                element: lazyPage(() => import('@/pages/agentSpecManagement')),
               },
               {
                 path: 'agentspec/new',
-                element: <UnsupportedFeature featureName="New Agent Spec" />,
+                element: lazyPage(() => import('@/pages/newAgentSpec')),
               },
               {
                 path: 'agentspec/:name',
-                element: <UnsupportedFeature featureName="Agent Spec Detail" />,
+                element: lazyPage(() => import('@/pages/agentSpecDetail')),
               },
               {
                 path: 'skill',
-                element: <UnsupportedFeature featureName="Skill Management" />,
+                element: lazyPage(() => import('@/pages/skillManagement')),
               },
               {
                 path: 'newSkill',
-                element: <UnsupportedFeature featureName="New Skill" />,
+                element: lazyPage(() => import('@/pages/newSkill')),
               },
               {
                 path: 'skill/:name',
-                element: <UnsupportedFeature featureName="Skill Detail" />,
+                element: lazyPage(() => import('@/pages/skillDetail')),
               },
               {
                 path: 'promptManagement',
-                element: <UnsupportedFeature featureName="Prompt Management" />,
+                element: lazyPage(() => import('@/pages/promptManagement')),
               },
               {
                 path: 'newPrompt',
-                element: <Navigate to="/promptManagement" replace />,
+                element: lazyPage(() => import('@/pages/newPrompt')),
               },
               {
                 path: 'promptDetail',
-                element: <UnsupportedFeature featureName="Prompt Detail" />,
+                element: lazyPage(() => import('@/pages/promptDetail')),
               },
               {
                 path: 'publishPromptVersion',
-                element: <Navigate to="/newPrompt" replace />,
+                element: lazyPage(() => import('@/pages/publishPromptVersion')),
               },
             ],
           },
@@ -238,7 +237,7 @@ export const routes: RouteObject[] = [
             children: [
               {
                 path: 'pluginManagement',
-                element: <UnsupportedFeature featureName="Plugin Management" />,
+                element: lazyPage(() => import('@/pages/pluginManagement')),
               },
             ],
           },
@@ -246,7 +245,7 @@ export const routes: RouteObject[] = [
           // Settings
           {
             path: 'settingCenter',
-            element: <UnsupportedFeature featureName="Setting Center" />,
+            element: lazyPage(() => import('@/pages/settingCenter')),
           },
         ],
       },

@@ -485,6 +485,30 @@ func (s *Server) Restore(env *store.Envelope) error {
 	return s.coord.Restore(env)
 }
 
+// ReopenAuditLog closes and reopens the audit log file, if one is configured.
+// Returns nil when no audit file is in use (loggerAuditLogger and noop
+// implementations don't hold a file descriptor).
+//
+// The canonical caller is the SIGHUP handler installed in cmd/gonacos:
+// logrotate renames the audit file and sends SIGHUP; this method swaps the
+// file descriptor so subsequent events land in the new file rather than the
+// renamed inode. Returns the first error from the underlying Reopen, but
+// all configured loggers get a Reopen call so a single broken file doesn't
+// block rotation of the others.
+//
+// Safe to call concurrently with Log: the fileAuditLogger's Reopen takes
+// the same mutex as Log, so an in-flight write completes before the fd is
+// swapped.
+func (s *Server) ReopenAuditLog() error {
+	if s.bundle == nil || s.bundle.AuditLogger == nil {
+		return nil
+	}
+	if r, ok := s.bundle.AuditLogger.(app.AuditLogReopener); ok {
+		return r.Reopen()
+	}
+	return nil
+}
+
 // HTTPAddr returns the actual bound HTTP address. When the configured address
 // uses :0, this returns the kernel-assigned port after [New] returns. Returns
 // the configured address as a fallback when the listener is not yet bound.

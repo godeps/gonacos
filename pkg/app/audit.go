@@ -61,6 +61,27 @@ type AuditLogger interface {
 	Log(event AuditEvent)
 }
 
+// AuditLogReopener is an optional interface implemented by AuditLoggers
+// that hold a long-lived file descriptor. Reopen closes the current
+// descriptor and opens a fresh one at the configured path.
+//
+// The canonical use case is logrotate(8) with SIGHUP: the operator renames
+// the audit log file (audit.log -> audit.log.1) and sends SIGHUP to gonacos.
+// Without Reopen, the logger would keep writing to the renamed inode
+// (audit.log.1) and the new audit.log would stay empty. With Reopen, the
+// logger closes the old fd and opens the new file at the configured path.
+//
+// The alternative (logrotate's copytruncate mode) races: events in flight
+// during the copy-truncate window are lost. SIGHUP+Reopen is the
+// race-free rotation strategy.
+//
+// Implementations must be safe to call while Log is concurrent: Reopen
+// takes the same lock as Log so an in-flight write completes before the
+// fd is swapped.
+type AuditLogReopener interface {
+	Reopen() error
+}
+
 // noopAuditLogger discards all events. Used when no logger is configured.
 type noopAuditLogger struct{}
 
@@ -177,6 +198,35 @@ func (l *fileAuditLogger) Log(e AuditEvent) {
 	}
 }
 
+// Reopen closes the current file handle and opens a fresh one at the
+// configured path. Used by SIGHUP-based log rotation: an operator renames
+// the audit log (e.g., audit.log -> audit.log.1) and sends SIGHUP; gonacos
+// calls Reopen so subsequent events land in the freshly-created audit.log
+// rather than the renamed inode.
+//
+// Safe to call while Log is concurrent: takes the same mutex as Log so an
+// in-flight write completes before the fd is swapped. After Reopen returns,
+// the next Log call writes to the new file.
+//
+// A failure to open the new file leaves the logger with no open fd; the
+// next Log call will attempt its own reopen-on-failure path. The error is
+// returned to the caller (typically the SIGHUP handler) so it can log the
+// failure — but the logger is not left in a permanently broken state.
+func (l *fileAuditLogger) Reopen() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.f != nil {
+		_ = l.f.Close()
+		l.f = nil
+	}
+	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("audit: reopen %s: %w", l.path, err)
+	}
+	l.f = f
+	return nil
+}
+
 // multiAuditLogger fans events out to multiple loggers. Useful when audit
 // events should go to both the application logger (for greppable access-log
 // style) and a dedicated file (for compliance/forwarding).
@@ -207,6 +257,27 @@ func (m multiAuditLogger) Log(e AuditEvent) {
 	for _, l := range m.loggers {
 		l.Log(e)
 	}
+}
+
+// Reopen delegates to every wrapped logger that implements AuditLogReopener.
+// Loggers that don't hold a file descriptor (e.g., loggerAuditLogger writing
+// to stderr) are silently skipped — there's nothing to reopen. Returns the
+// first error encountered; subsequent loggers still get a Reopen call so a
+// single broken file doesn't block rotation of the others.
+//
+// Used by SIGHUP-based log rotation when the audit pipeline fans out to
+// both a logger (for greppable access-log style) and a file (for compliance
+// archival). Both files need to be rotated atomically.
+func (m multiAuditLogger) Reopen() error {
+	var firstErr error
+	for _, l := range m.loggers {
+		if r, ok := l.(AuditLogReopener); ok {
+			if err := r.Reopen(); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
 }
 
 // auditFromRequest extracts the username (from auth claims) and client IP

@@ -596,8 +596,21 @@ func recoverGRPC(s *Server, w http.ResponseWriter, _ any, r *http.Request) {
 	writeGRPCStatus(w, StatusInternal, "internal server error")
 }
 
-// logPanic emits a single log line with the stack trace when Logf is set.
+// logPanic emits a single log line with the stack trace when Logf is set,
+// and increments gonacos_grpc_panics_total{method} when MetricsRegistry is
+// set. The metric is the alerting signal for handler crashes — a non-zero
+// rate pages on-call (deployed bug or malformed request the handler can't
+// process). The log line carries the stack for diagnosis.
+//
+// The two paths are independent: a nil Logf still records the metric (so
+// silent panics are still visible in monitoring), and a nil
+// MetricsRegistry still logs (so panics are still diagnosable from logs).
 func (s *Server) logPanic(rv any, r *http.Request) {
+	if s.MetricsRegistry != nil {
+		s.MetricsRegistry.Counter("gonacos_grpc_panics_total",
+			map[string]string{"method": r.URL.Path},
+		).Inc()
+	}
 	if s.Logf == nil {
 		return
 	}

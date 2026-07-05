@@ -578,3 +578,63 @@ func TestServerMetricsRegistryIncrements(t *testing.T) {
 		t.Fatalf("histogram observations = %d, want 1", hCount)
 	}
 }
+
+// TestServerUnaryHandlerPanicIncrementsMetric verifies that a panicking
+// unary handler increments gonacos_grpc_panics_total{method}. The metric
+// is the alerting signal for handler crashes — a non-zero rate pages
+// on-call (deployed bug or malformed request). Without the metric,
+// panics only show in logs (via Logf), which are easy to miss under high
+// request volume.
+//
+// The metric must increment even when Logf is nil — silent panics are
+// still visible in monitoring.
+func TestServerUnaryHandlerPanicIncrementsMetric(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	registry := newStubMetricsRegistry()
+	srv.MetricsRegistry = registry
+	// Intentionally leave Logf nil — metric must still increment.
+	srv.RegisterUnary("Request/request", func(ctx context.Context, req Payload) (Payload, error) {
+		panic("boom")
+	})
+	go func() { _ = srv.ListenAndServe("127.0.0.1:0") }()
+	for i := 0; i < 50 && srv.Addr() == nil; i++ {
+		time.Sleep(2 * time.Millisecond)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	body := encodeGRPCRequestBody(Payload{Metadata: Metadata{Type: "TestRequest"}})
+	resp, err := http.Post(
+		"http://"+srv.Addr().String()+"/Request/request",
+		"application/grpc",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.Header.Get("grpc-status") != "13" {
+		t.Fatalf("grpc-status = %v, want 13 (Internal)", resp.Header.Get("grpc-status"))
+	}
+
+	// stubMetricsRegistry keys counters as name + "/" + method + "/" +
+	// status. The panic counter has no status label, so the key uses an
+	// empty status suffix.
+	key := "gonacos_grpc_panics_total//Request/request/"
+	registry.mu.Lock()
+	c, ok := registry.counters[key]
+	registry.mu.Unlock()
+	if !ok {
+		t.Fatalf("no panic counter recorded for key %q (counters: %v)", key, registry.counters)
+	}
+	c.mu.Lock()
+	got := c.count
+	c.mu.Unlock()
+	if got != 1 {
+		t.Errorf("gonacos_grpc_panics_total = %d, want 1", got)
+	}
+}

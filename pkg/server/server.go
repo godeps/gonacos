@@ -236,7 +236,11 @@ func New(opts ...Option) (*Server, error) {
 
 	// Recovery wraps the innermost handler so panics produce a 500 JSON
 	// response with the request ID instead of crashing the connection.
-	httpHandler = newRecoveryMiddleware(logger, httpHandler)
+	// Wired with the metrics registry so a recovered panic increments
+	// gonacos_http_panics_total — the alerting signal that a handler is
+	// crashing. A non-zero rate pages on-call (deployed bug or malformed
+	// request the handler can't process).
+	httpHandler = newRecoveryMiddlewareWithRegistry(logger, httpHandler, registry)
 
 	// Per-IP rate limiting. Disabled when rps <= 0. The background cleanup
 	// goroutine reaps idle buckets so the map doesn't grow unbounded under

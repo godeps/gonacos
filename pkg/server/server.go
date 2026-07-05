@@ -116,6 +116,11 @@ func New(opts ...Option) (*Server, error) {
 
 	persist := store.NewRedisPersistence(redisClient, coord, dumpPath)
 	persist.SetBackupCount(o.resolveSnapshotBackupCount())
+	// Wire snapshot metrics into the persistence layer. The metrics are
+	// the data-loss signal: alert on gonacos_snapshot_saves_total{result=
+	// "failure"} rate > 0, and on time() - gonacos_last_snapshot_save_
+	// timestamp_seconds > 2*interval to catch a stuck periodic loop.
+	persist.SetMetricsRegistry(registry)
 	if err := persist.Load(context.Background()); err != nil {
 		if o.resolveStrictSnapshot() {
 			_ = redisClient.Close()

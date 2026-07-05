@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/godeps/gonacos/pkg/observability"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -31,6 +33,12 @@ type RedisPersistence struct {
 	coord       *Coordinator
 	dumpPath    string
 	backupCount int
+
+	// metrics is optional — when nil, metrics calls are no-ops. Wired in
+	// by [server.New] via SetMetricsRegistry. Tracked here rather than at
+	// the call site so the periodic ticker can record outcomes without
+	// the caller wiring each call.
+	metrics *observability.Registry
 
 	// saveMu serializes Save calls so the periodic ticker and a shutdown
 	// Save cannot trip over each other's rotation/write. Without this,
@@ -66,6 +74,50 @@ func (p *RedisPersistence) SetBackupCount(n int) {
 	p.backupCount = n
 }
 
+// SetMetricsRegistry wires a Prometheus metrics registry. When set, Save
+// and Load record:
+//
+//   - gonacos_snapshot_saves_total{result="success|failure"} — counter
+//   - gonacos_snapshot_loads_total{result="success|failure"} — counter
+//   - gonacos_snapshot_save_duration_seconds — histogram (1ms-10s buckets)
+//   - gonacos_last_snapshot_save_timestamp_seconds — gauge, unix seconds
+//
+// The gauge is the alerting signal: alert on `time() - last_save > 2*interval`
+// to catch a stuck periodic loop. The result="failure" counter is the data-
+// loss signal: a sustained failure rate means state won't survive restart.
+//
+// Nil registry is allowed — metrics calls become no-ops, preserving backward
+// compatibility for embedders that don't wire observability.
+func (p *RedisPersistence) SetMetricsRegistry(r *observability.Registry) {
+	p.metrics = r
+}
+
+// recordSaveResult increments the save counter and observes the duration.
+// Best-effort: a nil registry or a malformed result string is silently
+// dropped — metrics must not break the actual save call.
+func (p *RedisPersistence) recordSaveResult(result string, duration time.Duration) {
+	if p.metrics == nil {
+		return
+	}
+	p.metrics.Counter("gonacos_snapshot_saves_total", map[string]string{"result": result}).Inc()
+	p.metrics.Histogram("gonacos_snapshot_save_duration_seconds", nil,
+		[]float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000},
+	).Observe(duration.Milliseconds())
+	if result == "success" {
+		p.metrics.Gauge("gonacos_last_snapshot_save_timestamp_seconds", nil).Set(time.Now().Unix())
+	}
+}
+
+// recordLoadResult increments the load counter. Duration is not tracked
+// separately because load only happens once at startup — the histogram
+// would have a single observation per process lifetime, which is not useful.
+func (p *RedisPersistence) recordLoadResult(result string) {
+	if p.metrics == nil {
+		return
+	}
+	p.metrics.Counter("gonacos_snapshot_loads_total", map[string]string{"result": result}).Inc()
+}
+
 // Save snapshots all registered services and writes the envelope to the Redis
 // key. When dumpPath is set, the envelope is also written to disk so the
 // embedded Redis can be repopulated on next startup. Concurrent Save calls
@@ -75,15 +127,19 @@ func (p *RedisPersistence) Save(ctx context.Context) error {
 	p.saveMu.Lock()
 	defer p.saveMu.Unlock()
 
+	start := time.Now()
 	env, err := p.coord.Snapshot()
 	if err != nil {
+		p.recordSaveResult("failure", time.Since(start))
 		return fmt.Errorf("snapshot: %w", err)
 	}
 	data, err := json.Marshal(env)
 	if err != nil {
+		p.recordSaveResult("failure", time.Since(start))
 		return fmt.Errorf("marshal envelope: %w", err)
 	}
 	if err := p.client.Set(ctx, snapshotKey, data, 0).Err(); err != nil {
+		p.recordSaveResult("failure", time.Since(start))
 		return fmt.Errorf("redis set snapshot: %w", err)
 	}
 	if p.dumpPath != "" {
@@ -91,9 +147,11 @@ func (p *RedisPersistence) Save(ctx context.Context) error {
 			rotateDumpFile(p.dumpPath, p.backupCount)
 		}
 		if err := writeDumpFile(p.dumpPath, data); err != nil {
+			p.recordSaveResult("failure", time.Since(start))
 			return fmt.Errorf("write dump: %w", err)
 		}
 	}
+	p.recordSaveResult("success", time.Since(start))
 	return nil
 }
 
@@ -105,32 +163,43 @@ func (p *RedisPersistence) Load(ctx context.Context) error {
 	data, err := p.client.Get(ctx, snapshotKey).Bytes()
 	if err == redis.Nil {
 		if p.dumpPath == "" {
-			return nil // fresh start, nothing to restore
+			// Fresh start, nothing to restore. Not a failure.
+			p.recordLoadResult("success")
+			return nil
 		}
 		data, err = os.ReadFile(p.dumpPath)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return nil // fresh start, no dump file
+				// Fresh start, no dump file. Not a failure.
+				p.recordLoadResult("success")
+				return nil
 			}
+			p.recordLoadResult("failure")
 			return fmt.Errorf("read dump: %w", err)
 		}
 		// Repopulate Redis so future loads hit the cache.
 		if setErr := p.client.Set(ctx, snapshotKey, data, 0).Err(); setErr != nil {
+			p.recordLoadResult("failure")
 			return fmt.Errorf("redis set snapshot from dump: %w", setErr)
 		}
 	} else if err != nil {
+		p.recordLoadResult("failure")
 		return fmt.Errorf("redis get snapshot: %w", err)
 	}
 	if len(data) == 0 {
+		p.recordLoadResult("success")
 		return nil
 	}
 	var env Envelope
 	if err := json.Unmarshal(data, &env); err != nil {
+		p.recordLoadResult("failure")
 		return fmt.Errorf("unmarshal envelope: %w", err)
 	}
 	if err := p.coord.Restore(&env); err != nil {
+		p.recordLoadResult("failure")
 		return fmt.Errorf("restore: %w", err)
 	}
+	p.recordLoadResult("success")
 	return nil
 }
 
@@ -139,6 +208,12 @@ func (p *RedisPersistence) Load(ctx context.Context) error {
 // when ctx is canceled. Stop is idempotent and safe to call multiple times.
 // Stop blocks until any in-flight Save has completed, so callers can safely
 // call Save immediately after stop returns without racing on the dump file.
+//
+// Save errors from the periodic loop are logged via the standard log package
+// (not the server logger — pkg/store is below the logger layer in the
+// dependency graph). The metrics registry, if wired, records each failure
+// under gonacos_snapshot_saves_total{result="failure"}. Operators alert on
+// a non-zero failure rate.
 func (p *RedisPersistence) StartPeriodic(ctx context.Context, interval time.Duration) (stop func()) {
 	ticker := time.NewTicker(interval)
 	done := make(chan struct{})
@@ -155,7 +230,9 @@ func (p *RedisPersistence) StartPeriodic(ctx context.Context, interval time.Dura
 				ticker.Stop()
 				return
 			case <-ticker.C:
-				_ = p.Save(context.Background())
+				if err := p.Save(context.Background()); err != nil {
+					log.Printf("snapshot: periodic save failed: %v", err)
+				}
 			}
 		}
 	}()

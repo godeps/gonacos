@@ -188,6 +188,14 @@ func New(opts ...Option) (*Server, error) {
 
 	httpHandler = newRequestLogMiddleware(logger, o.HTTPVerboseLog, httpHandler)
 
+	// Security headers outermost so every response — including 429/413/404
+	// produced by the upper middlewares — carries nosniff, frame-options,
+	// referrer-policy, and (under TLS) HSTS. The inner handler can still
+	// override any header (e.g., set X-Frame-Options: DENY on a specific
+	// route).
+	certFile, keyFile := o.resolveTLS()
+	httpHandler = app.NewSecurityHeadersMiddleware(certFile != "" && keyFile != "", httpHandler)
+
 	writeTimeout := o.resolveHTTPWriteTimeout()
 	idleTimeout := o.resolveHTTPIdleTimeout()
 	httpSrv := &http.Server{

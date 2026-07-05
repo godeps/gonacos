@@ -231,6 +231,23 @@ func (s *Server) readFrameTimeout() time.Duration {
 	return DefaultReadFrameTimeout
 }
 
+// recordFrameReadTimeout increments gonacos_grpc_frame_read_timeouts_total
+// when a frame read is aborted by the per-frame deadline. The metric is
+// the alerting signal for slowloris-on-body attacks against the gRPC path
+// — a non-zero rate means peers are stalling mid-frame and getting
+// cut off by ReadFrameTimeout. Without it, operators can only see the
+// resulting DEADLINE_EXCEEDED statuses in gonacos_grpc_requests_total,
+// which conflate slowloris with legitimate slow clients and handler
+// timeouts. No-label counter: the attack pattern is "many timeouts
+// across the whole gRPC surface", not per-method, so cardinality stays
+// at 1. Callers handle a nil MetricsRegistry gracefully (no-op).
+func (s *Server) recordFrameReadTimeout() {
+	if s.MetricsRegistry == nil {
+		return
+	}
+	s.MetricsRegistry.Counter("gonacos_grpc_frame_read_timeouts_total", nil).Inc()
+}
+
 // RegisterUnary registers a handler for the Request service.
 func (s *Server) RegisterUnary(method string, h Handler) {
 	s.mu.Lock()
@@ -504,6 +521,7 @@ func (s *Server) handleUnary(ctx context.Context, w http.ResponseWriter, r *http
 			code = StatusResourceExhausted
 		case errors.Is(err, ErrReadFrameTimeout):
 			code = StatusDeadlineExceeded
+			s.recordFrameReadTimeout()
 		}
 		writeGRPCStatus(w, code, "read frame: "+err.Error())
 		return
@@ -541,6 +559,7 @@ func (s *Server) handleStream(ctx context.Context, w http.ResponseWriter, r *htt
 			code = StatusResourceExhausted
 		case errors.Is(err, ErrReadFrameTimeout):
 			code = StatusDeadlineExceeded
+			s.recordFrameReadTimeout()
 		}
 		writeGRPCStatus(w, code, "read frame: "+err.Error())
 		return
@@ -593,6 +612,9 @@ func (s *Server) handleBiStream(ctx context.Context, w http.ResponseWriter, r *h
 	recv := func() (Payload, error) {
 		frame, err := ReadFrameWithLimitAndTimeout(r.Body, s.maxFrameBytes(), s.readFrameTimeout())
 		if err != nil {
+			if errors.Is(err, ErrReadFrameTimeout) {
+				s.recordFrameReadTimeout()
+			}
 			return Payload{}, err
 		}
 		return DecodePayload(frame.Payload)

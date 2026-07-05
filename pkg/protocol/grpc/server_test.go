@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -637,4 +638,185 @@ func TestServerUnaryHandlerPanicIncrementsMetric(t *testing.T) {
 	if got != 1 {
 		t.Errorf("gonacos_grpc_panics_total = %d, want 1", got)
 	}
+}
+
+// TestServerUnaryFrameReadTimeoutIncrementsMetric verifies that a
+// slowloris-style peer sending a frame body 1 byte at a time triggers
+// ReadFrameTimeout, and that the timeout is recorded under
+// gonacos_grpc_frame_read_timeouts_total. The metric is the alerting
+// signal for slowloris-on-body attacks against the gRPC path — operators
+// use it to distinguish "legitimate slow clients hitting handler
+// timeouts" from "peers stalling mid-frame and getting cut off".
+//
+// Without this metric, operators can only see the resulting
+// DEADLINE_EXCEEDED statuses in gonacos_grpc_requests_total, which
+// conflate slowloris with legitimate slow clients and handler timeouts.
+func TestServerUnaryFrameReadTimeoutIncrementsMetric(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	srv.ReadFrameTimeout = 50 * time.Millisecond
+	registry := newStubMetricsRegistry()
+	srv.MetricsRegistry = registry
+	handlerCalled := 0
+	srv.RegisterUnary("Request/request", func(ctx context.Context, req Payload) (Payload, error) {
+		handlerCalled++
+		return Payload{Metadata: Metadata{Type: "TestResponse"}}, nil
+	})
+	go func() { _ = srv.ListenAndServe("127.0.0.1:0") }()
+	for i := 0; i < 50 && srv.Addr() == nil; i++ {
+		time.Sleep(2 * time.Millisecond)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	// Body: 5-byte gRPC frame header claiming a 100-byte body, then
+	// bytes dribbled 1 per 50ms. The 50ms ReadFrameTimeout fires
+	// before the body completes, so the handler is never invoked.
+	body := &slowReader{
+		interval:  50 * time.Millisecond,
+		preappend: []byte{0, 0, 0, 0, 100},
+	}
+	// Connection: close — the server otherwise drains the request
+	// body for keep-alive reuse after the handler returns, but the
+	// slow body would block that drain indefinitely.
+	req, err := http.NewRequest(http.MethodPost,
+		"http://"+srv.Addr().String()+"/Request/request", body)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/grpc")
+	req.Close = true
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		// Client may see a connection error if the server closes
+		// the connection before the client finishes sending the body.
+		// The metric should still be recorded; verify it below.
+	} else {
+		resp.Body.Close()
+	}
+
+	// Give the metric a moment to be recorded — the timeout fires
+	// near 50ms, but the goroutine cleanup may lag slightly.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		registry.mu.Lock()
+		c, ok := registry.counters["gonacos_grpc_frame_read_timeouts_total//"]
+		registry.mu.Unlock()
+		if ok {
+			c.mu.Lock()
+			got := c.count
+			c.mu.Unlock()
+			if got >= 1 {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("gonacos_grpc_frame_read_timeouts_total not incremented (counters: %v)", registry.counters)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if handlerCalled != 0 {
+		t.Errorf("handlerCalled = %d, want 0 (timed-out read must not invoke handler)", handlerCalled)
+	}
+}
+
+// TestServerBiStreamFrameReadTimeoutIncrementsMetric verifies that a
+// bistream RPC whose peer stalls mid-frame triggers ReadFrameTimeout
+// in the recv closure, recording gonacos_grpc_frame_read_timeouts_total.
+// The bistream path records the metric inside the recv closure (rather
+// than in a switch case like unary/stream) because the read happens
+// inside a callback the handler invokes — this test pins that code path.
+//
+// Uses a raw TCP connection rather than http.Post because the HTTP
+// client's chunked-encoding buffer can delay body bytes, making the
+// timeout non-deterministic. A raw connection lets us control exactly
+// when bytes arrive: send the 5-byte frame header, then stall — the
+// server's recv closure blocks waiting for the body, the 50ms deadline
+// fires, and the metric is recorded.
+func TestServerBiStreamFrameReadTimeoutIncrementsMetric(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	srv.ReadFrameTimeout = 50 * time.Millisecond
+	registry := newStubMetricsRegistry()
+	srv.MetricsRegistry = registry
+	srv.RegisterBiStream("BiRequestStream/bi", func(ctx context.Context, recv func() (Payload, error), send func(Payload) error) error {
+		// Drain recv until error — the slow body will trigger
+		// ErrReadFrameTimeout on the first frame.
+		_, err := recv()
+		return err
+	})
+	go func() { _ = srv.ListenAndServe("127.0.0.1:0") }()
+	for i := 0; i < 50 && srv.Addr() == nil; i++ {
+		time.Sleep(2 * time.Millisecond)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	conn, err := net.Dial("tcp", srv.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	// Send HTTP/1.1 POST with a 100-byte body declared via Content-Length.
+	// Send only the 5-byte gRPC frame header (which claims a 100-byte
+	// body), then stall — the server's recv blocks waiting for the
+	// remaining body bytes, the 50ms deadline fires, and the metric
+	// is recorded.
+	requestLine := "POST /BiRequestStream/bi HTTP/1.1\r\n" +
+		"Host: " + srv.Addr().String() + "\r\n" +
+		"Content-Type: application/grpc\r\n" +
+		"Content-Length: 105\r\n" + // 5 (header) + 100 (body)
+		"Connection: close\r\n\r\n"
+	if _, err := conn.Write([]byte(requestLine)); err != nil {
+		t.Fatalf("write headers: %v", err)
+	}
+	// Send the 5-byte gRPC frame header (uncompressed, 100-byte body).
+	// Don't send the body — the server's recv will block waiting for
+	// the body, the 50ms deadline will fire, and the metric will be
+	// recorded.
+	if _, err := conn.Write([]byte{0, 0, 0, 0, 100}); err != nil {
+		t.Fatalf("write frame header: %v", err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		registry.mu.Lock()
+		c, ok := registry.counters["gonacos_grpc_frame_read_timeouts_total//"]
+		registry.mu.Unlock()
+		if ok {
+			c.mu.Lock()
+			got := c.count
+			c.mu.Unlock()
+			if got >= 1 {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("gonacos_grpc_frame_read_timeouts_total not incremented for bistream (counters: %v)", registry.counters)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestServerRecordFrameReadTimeoutNilRegistryNoop verifies that
+// recordFrameReadTimeout does not panic when MetricsRegistry is nil —
+// production callers that opt out of metrics must not crash on timeout.
+func TestServerRecordFrameReadTimeoutNilRegistryNoop(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	// MetricsRegistry is nil by default.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("recordFrameReadTimeout panicked with nil registry: %v", r)
+		}
+	}()
+	srv.recordFrameReadTimeout()
 }

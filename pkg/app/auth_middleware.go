@@ -25,7 +25,12 @@ func ClaimsFromContext(ctx context.Context) authsvc.Claims {
 //
 // Design (permissive for SDK compatibility):
 //   - Open paths (health, login, bootstrap, UI) skip verification entirely.
-//   - Admin-only paths (user/role/permission CRUD) require a valid admin token.
+//   - Admin-only paths (user/role/permission CRUD, ops backup/restore, pprof)
+//     require a valid globalAdmin token — a missing or non-admin token is
+//     rejected. pprof endpoints are matched by prefix because they expose
+//     live process state (heap, goroutines, CPU profile) that an
+//     unauthenticated caller could misuse for reconnaissance or secret
+//     extraction.
 //   - All other paths: a missing token is allowed (anonymous), a presented
 //     token is verified and rejected if invalid or expired.
 //
@@ -69,6 +74,24 @@ var adminOnlyExactPaths = map[string]struct{}{
 	"/v3/auth/permission":      {},
 	"/v3/auth/permission/list": {},
 	"/v3/auth/permission/has":  {},
+	// Backup exports the full snapshot envelope (all config, naming, auth,
+	// AI state) — equivalent to a database dump. Restore overwrites all
+	// state from a caller-supplied payload. Both are admin-only.
+	"/v3/admin/ops/backup":  {},
+	"/v3/admin/ops/restore": {},
+	"/v3/admin/ops/metrics": {},
+	"/v3/admin/ops/info":    {},
+}
+
+// adminOnlyPrefixes require a valid globalAdmin token for any path that
+// starts with the prefix. Used for subtrees that should be admin-only in
+// their entirety (e.g., pprof handlers).
+var adminOnlyPrefixes = []string{
+	// pprof endpoints (heap, goroutine, profile, trace, ...) dump live
+	// process state. A heap dump leaks in-memory secrets (auth tokens,
+	// bcrypt hashes); a goroutine dump leaks call-stack arguments; a CPU
+	// profile is reconnaissance for further attacks. Admin-only.
+	"/v3/admin/ops/pprof/",
 }
 
 func (m *authMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +122,20 @@ func (m *authMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !claims.GlobalAdmin {
 			writeAuthMiddlewareError(w, authsvc.ErrAccessDenied)
 			return
+		}
+	} else {
+		for _, prefix := range adminOnlyPrefixes {
+			if strings.HasPrefix(path, prefix) {
+				if token == "" {
+					writeAuthMiddlewareError(w, authsvc.ErrInvalidToken)
+					return
+				}
+				if !claims.GlobalAdmin {
+					writeAuthMiddlewareError(w, authsvc.ErrAccessDenied)
+					return
+				}
+				break
+			}
 		}
 	}
 

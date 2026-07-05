@@ -189,3 +189,48 @@ func TestRequestLogMiddlewareIncrementsMetrics(t *testing.T) {
 		t.Fatalf("histogram not exposed in /metrics output: %s", promBuf.String())
 	}
 }
+
+// TestRequestLogMiddlewareRecordsResponseBytes verifies that when a metrics
+// registry is wired in, each request records gonacos_http_response_bytes
+// with the correct method label. Operators use this histogram to spot
+// regressions where a response balloons from 1KB to 100KB (e.g., a config
+// list endpoint returning unbounded results), and to estimate bandwidth
+// for capacity planning.
+func TestRequestLogMiddlewareRecordsResponseBytes(t *testing.T) {
+	var buf bytes.Buffer
+	logger := stubLogger{buf: &buf}
+	registry := observability.NewRegistry()
+	body := []byte("hello world response body")
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	})
+	mw := newRequestLogMiddleware(logger, false, registry, inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/v3/cs/configs", nil)
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+
+	// The histogram doesn't expose a value getter, so verify via the
+	// Prometheus output. The sum should equal the response body length
+	// (one request, one write).
+	_ = registry.Histogram("gonacos_http_response_bytes",
+		map[string]string{"method": "GET"},
+		[]float64{100, 256, 512})
+	var promBuf bytes.Buffer
+	registry.WritePrometheus(&promBuf)
+	out := promBuf.String()
+	if !strings.Contains(out, "gonacos_http_response_bytes") {
+		t.Fatalf("response bytes histogram not exposed in /metrics output: %s", out)
+	}
+	// The sum line should carry the response body length.
+	wantSum := fmt.Sprintf("gonacos_http_response_bytes_sum%s %d", `{method="GET"}`, len(body))
+	if !strings.Contains(out, wantSum) {
+		t.Fatalf("response bytes sum mismatch: want %q in %s", wantSum, out)
+	}
+	// The count line should carry 1 (one observation).
+	wantCount := fmt.Sprintf("gonacos_http_response_bytes_count%s 1", `{method="GET"}`)
+	if !strings.Contains(out, wantCount) {
+		t.Fatalf("response bytes count mismatch: want %q in %s", wantCount, out)
+	}
+}

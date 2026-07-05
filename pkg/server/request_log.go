@@ -203,6 +203,15 @@ func (m *requestLogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			map[string]string{"method": r.Method},
 			grpcsrv.HTTPLatencyBuckets(),
 		).Observe(duration.Milliseconds())
+		// Response size distribution. Operators use this to spot
+		// regressions where a response balloons from 1KB to 100KB
+		// (e.g., a config list endpoint returning unbounded results),
+		// and to estimate bandwidth for capacity planning. The
+		// +Inf bucket captures anything beyond the largest boundary.
+		m.registry.Histogram("gonacos_http_response_bytes",
+			map[string]string{"method": r.Method},
+			grpcsrv.HTTPBytesBuckets(),
+		).Observe(int64(rec.bytes))
 	}
 }
 

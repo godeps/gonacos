@@ -55,6 +55,18 @@ func HTTPLatencyBuckets() []float64 {
 	return []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000}
 }
 
+// HTTPBytesBuckets is the bucket set for gonacos_http_response_bytes.
+// Covers small responses (health checks ~100B) through large responses
+// (config exports, service list snapshots at multi-MB) at a resolution
+// that lets operators spot a regression where a response balloons from
+// 1KB to 100KB without per-method cardinality. Values are in bytes.
+// Exponential boundaries match common payload sizes: 100B (health),
+// 1KB (single config), 16KB (small list), 64KB (page), 1MB (large list),
+// 16MB (export). The +Inf bucket captures anything beyond.
+func HTTPBytesBuckets() []float64 {
+	return []float64{100, 256, 512, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216}
+}
+
 // StatusError carries a gRPC status code and message.
 type StatusError struct {
 	Code    int

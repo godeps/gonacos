@@ -40,6 +40,14 @@ type poolStatsProvider interface {
 //	                                    the metric should set a high cap
 //	                                    (e.g., 100000) to track without
 //	                                    effectively limiting.
+//	gonacos_connection_rejections_total{proto} — cumulative connections
+//	                                    refused because the cap was hit.
+//	                                    A sustained non-zero rate signals a
+//	                                    connection-flood attack or capacity
+//	                                    shortfall; pair with
+//	                                    gonacos_active_connections to tell
+//	                                    "saturated but not rejecting" from
+//	                                    "actively refusing new conns".
 //	gonacos_redis_pool_connections{state} — Redis connection pool state
 //	                                    (state="total|idle|stale"); sampled
 //	                                    from redis.Client.PoolStats so the
@@ -66,6 +74,8 @@ func startResourceCollector(registry *observability.Registry, bundle *app.Servic
 		connections *observability.Gauge
 		httpConns   *observability.Gauge
 		grpcConns   *observability.Gauge
+		httpReject  *observability.Gauge
+		grpcReject  *observability.Gauge
 		poolTotal   *observability.Gauge
 		poolIdle    *observability.Gauge
 		poolStale   *observability.Gauge
@@ -78,6 +88,8 @@ func startResourceCollector(registry *observability.Registry, bundle *app.Servic
 		connections: registry.Gauge("gonacos_grpc_connections", nil),
 		httpConns:   registry.Gauge("gonacos_active_connections", map[string]string{"proto": "http"}),
 		grpcConns:   registry.Gauge("gonacos_active_connections", map[string]string{"proto": "grpc"}),
+		httpReject:  registry.Gauge("gonacos_connection_rejections_total", map[string]string{"proto": "http"}),
+		grpcReject:  registry.Gauge("gonacos_connection_rejections_total", map[string]string{"proto": "grpc"}),
 		poolTotal:   registry.Gauge("gonacos_redis_pool_connections", map[string]string{"state": "total"}),
 		poolIdle:    registry.Gauge("gonacos_redis_pool_connections", map[string]string{"state": "idle"}),
 		poolStale:   registry.Gauge("gonacos_redis_pool_connections", map[string]string{"state": "stale"}),
@@ -133,11 +145,19 @@ func startResourceCollector(registry *observability.Registry, bundle *app.Servic
 		// [WithMaxConns] is set — the count lives on the maxConnsListener
 		// wrapper. Without the cap, the listeners are raw net.Listeners
 		// and the gauges stay at 0 (their initial value).
+		//
+		// The rejection counter is sampled here too: it is a cumulative
+		// int32 on the listener, so we Set (not Inc) the gauge to its
+		// absolute value. This mirrors the redis pool hits/misses
+		// pattern — Prometheus sees a monotonic counter that scrapers
+		// can rate via increase()/rate().
 		if ml, ok := httpLn.(*maxConnsListener); ok {
 			gauges.httpConns.Set(int64(ml.CurrentConns()))
+			gauges.httpReject.Set(int64(ml.RejectedConns()))
 		}
 		if ml, ok := grpcLn.(*maxConnsListener); ok {
 			gauges.grpcConns.Set(int64(ml.CurrentConns()))
+			gauges.grpcReject.Set(int64(ml.RejectedConns()))
 		}
 
 		// Redis connection pool state. PoolStats returns cumulative

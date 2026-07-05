@@ -22,10 +22,18 @@ import (
 // The cap is on connections, not requests — a single connection can carry
 // many requests (HTTP keep-alive, HTTP/2 multiplexing). Pair with the
 // per-IP rate limiter for request-level protection.
+//
+// rejected counts the cumulative number of connections refused because the
+// cap was hit. It is sampled by the resource collector and exposed as
+// gonacos_connection_rejections_total{proto} so operators can distinguish
+// "the cap is firing" from "the cap is saturated but not rejecting" — a
+// sustained non-zero rate is the signal for a connection-flood attack or
+// a capacity shortfall.
 type maxConnsListener struct {
 	net.Listener
-	max     int32
-	current atomic.Int32
+	max      int32
+	current  atomic.Int32
+	rejected atomic.Int32
 }
 
 // newMaxConnsListener wraps ln with a concurrent-connection cap. A max of
@@ -56,6 +64,7 @@ func (l *maxConnsListener) Accept() (net.Conn, error) {
 		if now > l.max {
 			_ = c.Close()
 			l.current.Add(-1)
+			l.rejected.Add(1)
 			continue
 		}
 		return &trackedConn{Conn: c, listener: l}, nil
@@ -68,9 +77,19 @@ func (l *maxConnsListener) release() {
 }
 
 // CurrentConns returns the current number of tracked connections. Useful
-// for metrics — the resource collector can expose this as a gauge.
+// for metrics — the resource collector exposes this as a gauge.
 func (l *maxConnsListener) CurrentConns() int32 {
 	return l.current.Load()
+}
+
+// RejectedConns returns the cumulative number of connections refused
+// because the cap was hit. The value is monotonic since process start
+// (modulo int32 overflow at ~2B rejections — at 100k rejections/sec that
+// is ~6 hours, which is long enough to alert and investigate; operators
+// who need longer history can scrape at a higher rate and let Prometheus
+// extrapolate).
+func (l *maxConnsListener) RejectedConns() int32 {
+	return l.rejected.Load()
 }
 
 // trackedConn wraps a net.Conn and decrements the listener's counter when

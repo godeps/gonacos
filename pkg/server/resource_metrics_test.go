@@ -186,3 +186,81 @@ func TestResourceCollectorRawListenersNoOpForConnections(t *testing.T) {
 		t.Errorf("http active connections with raw listener = %d, want 0 (no maxConnsListener)", httpGauge)
 	}
 }
+
+// TestResourceCollectorExposesConnectionRejections verifies that the
+// resource collector samples maxConnsListener.RejectedConns into
+// gonacos_connection_rejections_total{proto}. Operators alert on a
+// non-zero rate to catch a connection-flood attack or capacity shortfall
+// — without this gauge, they can only infer from active_connections
+// plateauing at max, which is indirect.
+func TestResourceCollectorExposesConnectionRejections(t *testing.T) {
+	registry := observability.NewRegistry()
+	bundle := app.NewServiceBundle()
+
+	rawHTTP, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("http listen: %v", err)
+	}
+	defer rawHTTP.Close()
+	httpLn := newMaxConnsListener(rawHTTP, 1) // cap at 1 to force rejections
+
+	stop := startResourceCollector(registry, bundle, nil, httpLn, nil, nil, 0)
+	defer stop()
+
+	// Hold one connection open to fill the cap, then dial two more —
+	// both should be rejected.
+	accepted := make(chan net.Conn, 10)
+	go func() {
+		for {
+			c, err := httpLn.Accept()
+			if err != nil {
+				return
+			}
+			accepted <- c
+		}
+	}()
+
+	c1, err := net.Dial("tcp", rawHTTP.Addr().String())
+	if err != nil {
+		t.Fatalf("dial 1: %v", err)
+	}
+	defer c1.Close()
+	time.Sleep(50 * time.Millisecond) // let accept fill the cap
+
+	c2, err := net.Dial("tcp", rawHTTP.Addr().String())
+	if err != nil {
+		t.Fatalf("dial 2: %v", err)
+	}
+	defer c2.Close()
+	c3, err := net.Dial("tcp", rawHTTP.Addr().String())
+	if err != nil {
+		t.Fatalf("dial 3: %v", err)
+	}
+	defer c3.Close()
+	time.Sleep(50 * time.Millisecond) // let rejections register
+
+	// Drain accepted conns so trackedConn.Close decrements the counter
+	// and frees the slot. Without this, the listener's current counter
+	// would stay at 1 and the test cleanup would leak goroutines.
+	defer func() {
+		for {
+			select {
+			case c := <-accepted:
+				_ = c.Close()
+			default:
+				return
+			}
+		}
+	}()
+
+	// Re-invoke the collector to refresh gauges.
+	stop()
+	stop = startResourceCollector(registry, bundle, nil, httpLn, nil, nil, 0)
+	defer stop()
+
+	rejGauge := registry.Gauge("gonacos_connection_rejections_total",
+		map[string]string{"proto": "http"}).Value()
+	if rejGauge < 2 {
+		t.Fatalf("http connection rejections = %d, want >= 2", rejGauge)
+	}
+}

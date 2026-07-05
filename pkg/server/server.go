@@ -436,8 +436,12 @@ func (s *Server) shutdownWithTimeout() error {
 	return s.Shutdown(ctx)
 }
 
-// Shutdown flushes the snapshot, stops cluster sync, and closes the HTTP
-// and gRPC servers. Safe to call once; subsequent calls are no-ops on the
+// Shutdown stops the background goroutines, stops accepting new
+// connections, waits for in-flight requests to complete, then flushes
+// the snapshot and closes Redis. The ordering matters: listeners close
+// before Redis so in-flight requests can finish their Redis work, and
+// the snapshot save runs after in-flight completion so it captures the
+// final state. Safe to call once; subsequent calls are no-ops on the
 // HTTP/gRPC layers (their Shutdown handles double-call gracefully).
 func (s *Server) Shutdown(ctx context.Context) error {
 	if s.stopPeriodic != nil {
@@ -449,6 +453,29 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.stopResource != nil {
 		s.stopResource()
 	}
+	// Close the listeners first so no new connections arrive while
+	// in-flight requests are still running. Without this, a request
+	// accepted after Redis is closed would fail with a Redis error
+	// rather than a graceful connection-refused.
+	if s.httpLn != nil {
+		_ = s.httpLn.Close()
+	}
+	if s.grpcLn != nil {
+		_ = s.grpcLn.Close()
+	}
+	// Shutdown the HTTP and gRPC servers — this waits for in-flight
+	// handlers to complete (bounded by ctx). Handlers can still reach
+	// Redis during this window because Redis is not yet closed.
+	if err := s.httpSrv.Shutdown(ctx); err != nil {
+		return fmt.Errorf("shutdown http server: %w", err)
+	}
+	if err := s.grpcSrv.Shutdown(ctx); err != nil {
+		return fmt.Errorf("shutdown grpc server: %w", err)
+	}
+	// All in-flight requests have completed. Save the snapshot now so
+	// it captures the final state, including any writes the in-flight
+	// requests performed. Saving before Redis closes means Save can
+	// still read from Redis.
 	if err := s.persist.Save(ctx); err != nil {
 		s.logger.Errorf("save snapshot on shutdown: %v", err)
 	}
@@ -458,20 +485,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	_ = s.redisClient.Close()
 	if s.embeddedRedis != nil {
 		_ = s.embeddedRedis.Close()
-	}
-	// Closing the listeners unblocks any Accept loops that haven't been
-	// drained by http.Server.Shutdown / grpc.Server.Shutdown yet.
-	if s.httpLn != nil {
-		_ = s.httpLn.Close()
-	}
-	if s.grpcLn != nil {
-		_ = s.grpcLn.Close()
-	}
-	if err := s.httpSrv.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown http server: %w", err)
-	}
-	if err := s.grpcSrv.Shutdown(ctx); err != nil {
-		return fmt.Errorf("shutdown grpc server: %w", err)
 	}
 	return nil
 }

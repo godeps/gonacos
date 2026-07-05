@@ -31,6 +31,15 @@ type RedisPersistence struct {
 	coord       *Coordinator
 	dumpPath    string
 	backupCount int
+
+	// saveMu serializes Save calls so the periodic ticker and a shutdown
+	// Save cannot trip over each other's rotation/write. Without this,
+	// stopPeriodic closes the done channel but does not wait for an
+	// in-flight Save to finish — the goroutine only observes the channel
+	// after Save returns. A Save started by the ticker and a Save started
+	// by Shutdown could then race on rotateDumpFile, leaving snapshot.1
+	// missing while snapshot.2 holds the prior snapshot.
+	saveMu sync.Mutex
 }
 
 // NewRedisPersistence constructs a persistence layer. dumpPath may be empty
@@ -59,8 +68,13 @@ func (p *RedisPersistence) SetBackupCount(n int) {
 
 // Save snapshots all registered services and writes the envelope to the Redis
 // key. When dumpPath is set, the envelope is also written to disk so the
-// embedded Redis can be repopulated on next startup.
+// embedded Redis can be repopulated on next startup. Concurrent Save calls
+// are serialized by saveMu so the periodic ticker and a shutdown Save cannot
+// interleave their rotation/write steps.
 func (p *RedisPersistence) Save(ctx context.Context) error {
+	p.saveMu.Lock()
+	defer p.saveMu.Unlock()
+
 	env, err := p.coord.Snapshot()
 	if err != nil {
 		return fmt.Errorf("snapshot: %w", err)
@@ -123,11 +137,15 @@ func (p *RedisPersistence) Load(ctx context.Context) error {
 // StartPeriodic launches a goroutine that calls Save on the given interval
 // until the returned stop function is called. The goroutine exits cleanly
 // when ctx is canceled. Stop is idempotent and safe to call multiple times.
+// Stop blocks until any in-flight Save has completed, so callers can safely
+// call Save immediately after stop returns without racing on the dump file.
 func (p *RedisPersistence) StartPeriodic(ctx context.Context, interval time.Duration) (stop func()) {
 	ticker := time.NewTicker(interval)
 	done := make(chan struct{})
+	finished := make(chan struct{})
 	var once sync.Once
 	go func() {
+		defer close(finished)
 		for {
 			select {
 			case <-ctx.Done():
@@ -142,7 +160,10 @@ func (p *RedisPersistence) StartPeriodic(ctx context.Context, interval time.Dura
 		}
 	}()
 	return func() {
-		once.Do(func() { close(done) })
+		once.Do(func() {
+			close(done)
+			<-finished
+		})
 	}
 }
 

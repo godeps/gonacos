@@ -2,17 +2,40 @@ package store
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
 )
 
+// fakeSnapshotter is a test Snapshotter with a thread-safe data field so
+// concurrent tests (e.g. TestRedisPersistence_ConcurrentSaveWithRotation)
+// can mutate data from multiple goroutines without tripping the race
+// detector.
 type fakeSnapshotter struct {
+	mu   sync.RWMutex
 	key  string
 	data any
 }
 
-func (f *fakeSnapshotter) SnapshotKey() string    { return f.key }
-func (f *fakeSnapshotter) Snapshot() (any, error) { return f.data, nil }
-func (f *fakeSnapshotter) Restore(data any) error { f.data = data; return nil }
+func (f *fakeSnapshotter) SnapshotKey() string { return f.key }
+func (f *fakeSnapshotter) Snapshot() (any, error) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	return f.data, nil
+}
+func (f *fakeSnapshotter) Restore(data any) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.data = data
+	return nil
+}
+
+// setData is a test helper to update the snapshotter's data under the
+// mutex.
+func (f *fakeSnapshotter) setData(data any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.data = data
+}
 
 func TestCoordinatorSnapshotAndRestore(t *testing.T) {
 	t.Parallel()

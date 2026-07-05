@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -213,5 +214,103 @@ func TestRedisPersistence_AtomicWriteNoCorruptionOnPartialWrite(t *testing.T) {
 		if strings.HasPrefix(e.Name(), "snapshot.json.tmp-") {
 			t.Errorf("leftover temp file: %s", e.Name())
 		}
+	}
+}
+
+// TestRedisPersistence_ConcurrentSaveWithRotation verifies that concurrent
+// Save calls do not corrupt the rotation. Before the saveMu fix, two
+// concurrent Saves could interleave their rotate+write steps: Save A moves
+// snapshot.json → snapshot.1.json, Save B moves snapshot.1.json →
+// snapshot.2.json (but snapshot.json no longer exists), Save A writes
+// snapshot.json, Save B overwrites snapshot.json. Result: snapshot.1 is
+// missing while snapshot.2 holds the prior snapshot. With the mutex, all
+// rotation slots are populated correctly.
+func TestRedisPersistence_ConcurrentSaveWithRotation(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	dumpPath := filepath.Join(dir, "snapshot.json")
+	p, fake, _, cleanup := newTestPersistence(t, dumpPath)
+	defer cleanup()
+	p.SetBackupCount(3)
+
+	// Run 20 concurrent Saves from multiple goroutines, each writing a
+	// distinct generation. With the mutex, all Saves serialize and the
+	// rotation is consistent.
+	const goroutines = 4
+	const savesPerGoroutine = 5
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < savesPerGoroutine; i++ {
+				fake.setData(map[string]string{
+					"goroutine": string(rune('0' + g)),
+					"iter":      string(rune('0' + i)),
+				})
+				if err := p.Save(context.Background()); err != nil {
+					t.Errorf("save: %v", err)
+					return
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+
+	// The current dump and all rotation slots must be valid JSON. If the
+	// rotation raced, snapshot.1 would be missing or contain stale data.
+	for _, suffix := range []string{"", ".1", ".2", ".3"} {
+		path := dumpPath + suffix
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Errorf("read %s: %v", suffix, err)
+			continue
+		}
+		if !json.Valid(data) {
+			t.Errorf("%s is not valid JSON", suffix)
+		}
+	}
+}
+
+// TestRedisPersistence_StopWaitsForInflightSave verifies that the stop
+// function returned by StartPeriodic blocks until any in-flight Save has
+// completed. Without this guarantee, a Save started by the ticker and a
+// Save started by Shutdown immediately after could race on the dump file
+// even with the saveMu (the goroutine would still be mid-Save when stop
+// returns).
+func TestRedisPersistence_StopWaitsForInflightSave(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	dumpPath := filepath.Join(dir, "snapshot.json")
+	p, fake, _, cleanup := newTestPersistence(t, dumpPath)
+	defer cleanup()
+	p.SetBackupCount(2)
+
+	// Use a very short interval so a Save starts quickly.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop := p.StartPeriodic(ctx, 10*time.Millisecond)
+	defer stop()
+
+	// Wait for at least one Save to land, then immediately call stop.
+	// The test passes if stop returns without hanging and the dump file
+	// is valid — meaning no Save was left mid-write.
+	time.Sleep(40 * time.Millisecond)
+	stop()
+
+	// After stop returns, we can safely call Save ourselves without
+	// racing. If stop did not wait for the goroutine, this Save could
+	// interleave with the goroutine's in-flight Save.
+	fake.setData(map[string]string{"after": "stop"})
+	if err := p.Save(context.Background()); err != nil {
+		t.Fatalf("save after stop: %v", err)
+	}
+
+	data, err := os.ReadFile(dumpPath)
+	if err != nil {
+		t.Fatalf("read dump: %v", err)
+	}
+	if !json.Valid(data) {
+		t.Fatalf("dump file is not valid JSON after stop+save")
 	}
 }

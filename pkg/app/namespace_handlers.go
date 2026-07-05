@@ -17,11 +17,12 @@ type namespaceHandler struct {
 	service *namespace.Service
 	configs *config.Service
 	admin   bool
+	audit   AuditLogger
 }
 
-func registerNamespaceRoutes(register func(string, string, http.HandlerFunc), service *namespace.Service, configs *config.Service) {
-	console := namespaceHandler{service: service, configs: configs}
-	admin := namespaceHandler{service: service, configs: configs, admin: true}
+func registerNamespaceRoutes(register func(string, string, http.HandlerFunc), service *namespace.Service, configs *config.Service, audit AuditLogger) {
+	console := namespaceHandler{service: service, configs: configs, audit: audit}
+	admin := namespaceHandler{service: service, configs: configs, admin: true, audit: audit}
 
 	for _, base := range []string{"/v3/console/core/namespace"} {
 		register(http.MethodGet, base, console.detail)
@@ -51,9 +52,11 @@ func (h namespaceHandler) create(w http.ResponseWriter, r *http.Request) {
 		namespaceID = formValue(r, "customNamespaceId")
 	}
 	if err := h.service.Create(namespaceID, formValue(r, "namespaceName"), formValue(r, "namespaceDesc")); err != nil {
+		auditLog(h.audit, r, AuditActionNamespaceCreate, namespaceID, err.Error(), AuditResultFailure)
 		writeNamespaceError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionNamespaceCreate, namespaceID, "", AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, true)
 }
 
@@ -61,10 +64,13 @@ func (h namespaceHandler) update(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.Update(formValue(r, "namespaceId"), formValue(r, "namespaceName"), formValue(r, "namespaceDesc")); err != nil {
+	namespaceID := formValue(r, "namespaceId")
+	if err := h.service.Update(namespaceID, formValue(r, "namespaceName"), formValue(r, "namespaceDesc")); err != nil {
+		auditLog(h.audit, r, AuditActionNamespaceUpdate, namespaceID, err.Error(), AuditResultFailure)
 		writeNamespaceError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionNamespaceUpdate, namespaceID, "", AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, true)
 }
 
@@ -72,10 +78,13 @@ func (h namespaceHandler) delete(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.Delete(formValue(r, "namespaceId")); err != nil {
+	namespaceID := formValue(r, "namespaceId")
+	if err := h.service.Delete(namespaceID); err != nil {
+		auditLog(h.audit, r, AuditActionNamespaceDelete, namespaceID, err.Error(), AuditResultFailure)
 		writeNamespaceError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionNamespaceDelete, namespaceID, "", AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, true)
 }
 

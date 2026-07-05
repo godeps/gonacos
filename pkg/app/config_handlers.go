@@ -19,12 +19,13 @@ import (
 type configHandler struct {
 	service *configsvc.Service
 	mode    string
+	audit   AuditLogger
 }
 
-func registerConfigRoutes(register func(string, string, http.HandlerFunc), service *configsvc.Service) {
-	admin := configHandler{service: service, mode: "admin"}
-	console := configHandler{service: service, mode: "console"}
-	client := configHandler{service: service, mode: "client"}
+func registerConfigRoutes(register func(string, string, http.HandlerFunc), service *configsvc.Service, audit AuditLogger) {
+	admin := configHandler{service: service, mode: "admin", audit: audit}
+	console := configHandler{service: service, mode: "console", audit: audit}
+	client := configHandler{service: service, mode: "client", audit: audit}
 
 	for _, base := range []string{"/v3/admin/cs/config"} {
 		register(http.MethodGet, base, admin.detail)
@@ -98,9 +99,11 @@ func (h configHandler) publish(w http.ResponseWriter, r *http.Request) {
 		BetaIPs:          r.Header.Get("betaIps"),
 	}
 	if err := h.service.Publish(req); err != nil {
+		auditLog(h.audit, r, AuditActionConfigPublish, configResourceID(req.NamespaceID, req.GroupName, req.DataID), err.Error(), AuditResultFailure)
 		writeConfigError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionConfigPublish, configResourceID(req.NamespaceID, req.GroupName, req.DataID), "", AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, true)
 }
 
@@ -170,10 +173,15 @@ func (h configHandler) delete(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.Delete(formValue(r, "namespaceId"), formValue(r, "groupName"), formValue(r, "dataId")); err != nil {
+	namespaceID := formValue(r, "namespaceId")
+	groupName := formValue(r, "groupName")
+	dataID := formValue(r, "dataId")
+	if err := h.service.Delete(namespaceID, groupName, dataID); err != nil {
+		auditLog(h.audit, r, AuditActionConfigDelete, configResourceID(namespaceID, groupName, dataID), err.Error(), AuditResultFailure)
 		writeConfigError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionConfigDelete, configResourceID(namespaceID, groupName, dataID), "", AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, true)
 }
 
@@ -698,6 +706,16 @@ func splitIDs(value string) []string {
 		return nil
 	}
 	return strings.Split(value, ",")
+}
+
+// configResourceID formats a config identifier as namespace/group/dataId for
+// the audit log's Resource field. Empty namespace is shown as "public" to
+// match Nacos conventions.
+func configResourceID(namespaceID, groupName, dataID string) string {
+	if namespaceID == "" {
+		namespaceID = "public"
+	}
+	return namespaceID + "/" + groupName + "/" + dataID
 }
 
 type clonePayload struct {

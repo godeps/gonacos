@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	authsvc "github.com/godeps/gonacos/pkg/auth"
+	"github.com/godeps/gonacos/pkg/observability"
 	"github.com/godeps/gonacos/pkg/protocol"
 )
 
@@ -39,12 +40,19 @@ func ClaimsFromContext(ctx context.Context) authsvc.Claims {
 // sources in order: Authorization header → accessToken query → accessToken
 // form.
 type authMiddleware struct {
-	auth *authsvc.Service
-	next http.Handler
+	auth     *authsvc.Service
+	next     http.Handler
+	tokenOK  *observability.Counter
+	tokenBad *observability.Counter
 }
 
-func newAuthMiddleware(auth *authsvc.Service, next http.Handler) http.Handler {
-	return &authMiddleware{auth: auth, next: next}
+func newAuthMiddleware(auth *authsvc.Service, next http.Handler, registry *observability.Registry) http.Handler {
+	mw := &authMiddleware{auth: auth, next: next}
+	if registry != nil {
+		mw.tokenOK = registry.Counter("gonacos_token_validations_total", map[string]string{"result": "valid"})
+		mw.tokenBad = registry.Counter("gonacos_token_validations_total", map[string]string{"result": "invalid"})
+	}
+	return mw
 }
 
 // openPaths bypass auth entirely. Login and bootstrap must work without a
@@ -105,8 +113,14 @@ func (m *authMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if token != "" {
 		c, err := m.auth.VerifyToken(token)
 		if err != nil {
+			if m.tokenBad != nil {
+				m.tokenBad.Inc()
+			}
 			writeAuthMiddlewareError(w, err)
 			return
+		}
+		if m.tokenOK != nil {
+			m.tokenOK.Inc()
 		}
 		claims = c
 		r = r.WithContext(context.WithValue(r.Context(), claimsKey{}, claims))
@@ -114,6 +128,9 @@ func (m *authMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if _, exact := adminOnlyExactPaths[path]; exact {
 		if token == "" {
+			if m.tokenBad != nil {
+				m.tokenBad.Inc()
+			}
 			writeAuthMiddlewareError(w, authsvc.ErrInvalidToken)
 			return
 		}
@@ -125,6 +142,9 @@ func (m *authMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for _, prefix := range adminOnlyPrefixes {
 			if strings.HasPrefix(path, prefix) {
 				if token == "" {
+					if m.tokenBad != nil {
+						m.tokenBad.Inc()
+					}
 					writeAuthMiddlewareError(w, authsvc.ErrInvalidToken)
 					return
 				}

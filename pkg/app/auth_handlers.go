@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/godeps/gonacos/pkg/auth"
+	"github.com/godeps/gonacos/pkg/observability"
 	"github.com/godeps/gonacos/pkg/protocol"
 )
 
@@ -13,7 +14,7 @@ type authHandler struct {
 	audit   AuditLogger
 }
 
-func registerAuthRoutes(register func(string, string, http.HandlerFunc), service *auth.Service, throttle *LoginThrottle, audit AuditLogger) {
+func registerAuthRoutes(register func(string, string, http.HandlerFunc), service *auth.Service, throttle *LoginThrottle, audit AuditLogger, registry *observability.Registry) {
 	h := authHandler{service: service, audit: audit}
 
 	for _, base := range []string{"/v3/auth/user"} {
@@ -25,7 +26,7 @@ func registerAuthRoutes(register func(string, string, http.HandlerFunc), service
 		register(http.MethodGet, base+"/search", h.searchUsers)
 		loginHandler := h.login
 		if throttle != nil {
-			loginHandler = newLoginThrottleMiddleware(throttle, h.login).ServeHTTP
+			loginHandler = newLoginThrottleMiddleware(throttle, h.login, registry).ServeHTTP
 		}
 		register(http.MethodPost, base+"/login", loginHandler)
 	}

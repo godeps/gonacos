@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/godeps/gonacos/pkg/observability"
 )
 
 // TestLoginThrottleLocksAfterMaxFailures verifies that maxFailures
@@ -118,7 +120,7 @@ func TestLoginThrottleMiddlewareRejectsLocked(t *testing.T) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
-	mw := newLoginThrottleMiddleware(throttle, inner)
+	mw := newLoginThrottleMiddleware(throttle, inner, nil)
 
 	// Two failures to lock.
 	for i := 0; i < 2; i++ {
@@ -131,7 +133,7 @@ func TestLoginThrottleMiddlewareRejectsLocked(t *testing.T) {
 			called = true
 			w.WriteHeader(http.StatusUnauthorized)
 		})
-		mw401 := newLoginThrottleMiddleware(throttle, inner401)
+		mw401 := newLoginThrottleMiddleware(throttle, inner401, nil)
 		mw401.ServeHTTP(w, req)
 	}
 
@@ -162,7 +164,7 @@ func TestLoginThrottleMiddlewarePassesUnlocked(t *testing.T) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	})
-	mw := newLoginThrottleMiddleware(throttle, inner)
+	mw := newLoginThrottleMiddleware(throttle, inner, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/v3/auth/user/login", strings.NewReader("username=admin&password=right"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -191,4 +193,57 @@ func TestLoginThrottleConcurrent(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+}
+
+// TestLoginThrottleMiddlewareMetrics verifies that the login throttle
+// middleware increments gonacos_login_attempts_total with the correct
+// result label for success, failure, and lockout. These counters are
+// the security monitoring signal for brute-force detection — a spike
+// in result="failure" or result="locked" pages the on-call.
+func TestLoginThrottleMiddlewareMetrics(t *testing.T) {
+	registry := observability.NewRegistry()
+	throttle := NewLoginThrottle(2, time.Minute, 5*time.Minute)
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Alternate between 200 and 401 to exercise both counters.
+		if r.FormValue("password") == "ok" {
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	})
+	mw := newLoginThrottleMiddleware(throttle, inner, registry)
+
+	// One success.
+	throttlePostForm(mw, "admin", "ok")
+	// Two failures (does not lock yet — threshold is 2, but isLocked checks
+	// BEFORE the request, so the 3rd attempt is the one that gets locked).
+	throttlePostForm(mw, "admin", "wrong")
+	throttlePostForm(mw, "admin", "wrong")
+	// Third failure-attempt: now locked, middleware returns 429 without
+	// calling inner.
+	throttlePostForm(mw, "admin", "wrong")
+
+	okCount := registry.Counter("gonacos_login_attempts_total", map[string]string{"result": "success"}).Value()
+	failCount := registry.Counter("gonacos_login_attempts_total", map[string]string{"result": "failure"}).Value()
+	lockCount := registry.Counter("gonacos_login_attempts_total", map[string]string{"result": "locked"}).Value()
+	if okCount != 1 {
+		t.Fatalf("success counter = %d, want 1", okCount)
+	}
+	if failCount != 2 {
+		t.Fatalf("failure counter = %d, want 2", failCount)
+	}
+	if lockCount != 1 {
+		t.Fatalf("lockout counter = %d, want 1", lockCount)
+	}
+}
+
+// postForm is a helper for the login throttle tests: it builds a POST
+// request with form-encoded username/password and dispatches through mw.
+func throttlePostForm(mw http.Handler, username, password string) {
+	body := "username=" + username + "&password=" + password
+	req := httptest.NewRequest(http.MethodPost, "/v3/auth/user/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.RemoteAddr = "10.0.0.1:1234"
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
 }

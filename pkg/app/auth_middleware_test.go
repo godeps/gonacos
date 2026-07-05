@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	authsvc "github.com/godeps/gonacos/pkg/auth"
+	"github.com/godeps/gonacos/pkg/observability"
 	"github.com/godeps/gonacos/pkg/protocol"
 )
 
@@ -46,7 +47,7 @@ func echoHandler() http.HandlerFunc {
 
 func TestAuthMiddleware_OpenPathNoToken(t *testing.T) {
 	svc, _, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v3/console/health/liveness", nil)
 	rec := httptest.NewRecorder()
@@ -59,7 +60,7 @@ func TestAuthMiddleware_OpenPathNoToken(t *testing.T) {
 
 func TestAuthMiddleware_OpenPathInvalidToken(t *testing.T) {
 	svc, _, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v3/auth/user/login", nil)
 	req.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+"garbage")
@@ -73,7 +74,7 @@ func TestAuthMiddleware_OpenPathInvalidToken(t *testing.T) {
 
 func TestAuthMiddleware_StandardPathNoToken(t *testing.T) {
 	svc, _, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	// Console routes (not under /v3/admin/) remain permissive — a missing
 	// token is allowed for SDK compatibility. Admin routes (/v3/admin/*)
@@ -89,7 +90,7 @@ func TestAuthMiddleware_StandardPathNoToken(t *testing.T) {
 
 func TestAuthMiddleware_AdminPrefixNoToken(t *testing.T) {
 	svc, _, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	// Admin routes under /v3/admin/ require a valid admin token — anonymous
 	// access is rejected. This covers namespace, config, AI, cluster, plugin,
@@ -105,7 +106,7 @@ func TestAuthMiddleware_AdminPrefixNoToken(t *testing.T) {
 
 func TestAuthMiddleware_AdminPrefixNonAdminToken(t *testing.T) {
 	svc, _, nonAdminToken := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	// A non-admin token is rejected for admin prefix routes.
 	req := httptest.NewRequest(http.MethodGet, "/v3/admin/core/namespace/list", nil)
@@ -120,7 +121,7 @@ func TestAuthMiddleware_AdminPrefixNonAdminToken(t *testing.T) {
 
 func TestAuthMiddleware_StandardPathValidToken(t *testing.T) {
 	svc, adminToken, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v3/admin/cs/config/list", nil)
 	req.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+adminToken)
@@ -134,7 +135,7 @@ func TestAuthMiddleware_StandardPathValidToken(t *testing.T) {
 
 func TestAuthMiddleware_StandardPathInvalidToken(t *testing.T) {
 	svc, _, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v3/admin/cs/config/list", nil)
 	req.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+"not-a-real-token")
@@ -148,7 +149,7 @@ func TestAuthMiddleware_StandardPathInvalidToken(t *testing.T) {
 
 func TestAuthMiddleware_AdminPathNoToken(t *testing.T) {
 	svc, _, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/v3/auth/user", nil)
 	rec := httptest.NewRecorder()
@@ -161,7 +162,7 @@ func TestAuthMiddleware_AdminPathNoToken(t *testing.T) {
 
 func TestAuthMiddleware_AdminPathNonAdmin(t *testing.T) {
 	svc, _, viewerToken := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/v3/auth/role", nil)
 	req.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+viewerToken)
@@ -175,7 +176,7 @@ func TestAuthMiddleware_AdminPathNonAdmin(t *testing.T) {
 
 func TestAuthMiddleware_AdminPathAdmin(t *testing.T) {
 	svc, adminToken, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v3/auth/user/list", nil)
 	req.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+adminToken)
@@ -189,7 +190,7 @@ func TestAuthMiddleware_AdminPathAdmin(t *testing.T) {
 
 func TestAuthMiddleware_AdminPathInvalidToken(t *testing.T) {
 	svc, _, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/v3/auth/permission", nil)
 	req.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+"bogus")
@@ -203,7 +204,7 @@ func TestAuthMiddleware_AdminPathInvalidToken(t *testing.T) {
 
 func TestAuthMiddleware_TokenFromQueryParameter(t *testing.T) {
 	svc, adminToken, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	// SDK GET style: accessToken in query string, no Authorization header.
 	req := httptest.NewRequest(http.MethodGet, "/v3/auth/user/list?accessToken="+url.QueryEscape(adminToken), nil)
@@ -217,7 +218,7 @@ func TestAuthMiddleware_TokenFromQueryParameter(t *testing.T) {
 
 func TestAuthMiddleware_TokenFromFormParameter(t *testing.T) {
 	svc, adminToken, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	form := url.Values{}
 	form.Set("accessToken", adminToken)
@@ -235,7 +236,7 @@ func TestAuthMiddleware_TokenFromFormParameter(t *testing.T) {
 
 func TestAuthMiddleware_NacosPrefixOpenPath(t *testing.T) {
 	svc, _, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/nacos/v3/console/health/liveness", nil)
 	rec := httptest.NewRecorder()
@@ -248,7 +249,7 @@ func TestAuthMiddleware_NacosPrefixOpenPath(t *testing.T) {
 
 func TestAuthMiddleware_NacosPrefixAdminPath(t *testing.T) {
 	svc, adminToken, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/nacos/v3/auth/user/list", nil)
 	req.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+adminToken)
@@ -267,7 +268,7 @@ func TestAuthMiddleware_ClaimsInjectedIntoContext(t *testing.T) {
 		captured = ClaimsFromContext(r.Context())
 		protocol.WriteResult(w, http.StatusOK, "ok")
 	})
-	handler := newAuthMiddleware(svc, inner)
+	handler := newAuthMiddleware(svc, inner, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v3/admin/cs/config/list", nil)
 	req.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+adminToken)
@@ -287,7 +288,7 @@ func TestAuthMiddleware_ClaimsInjectedIntoContext(t *testing.T) {
 
 func TestAuthMiddleware_UIPathBypassesAuth(t *testing.T) {
 	svc, _, _ := newAuthTestServices(t)
-	handler := newAuthMiddleware(svc, echoHandler())
+	handler := newAuthMiddleware(svc, echoHandler(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v3/console/ui/index.html", nil)
 	rec := httptest.NewRecorder()
@@ -358,4 +359,47 @@ func newServicesWithAuth(auth *authsvc.Service) *ServiceBundle {
 	bundle := NewServiceBundle()
 	bundle.Auth = auth
 	return bundle
+}
+
+// TestAuthMiddlewareTokenValidationMetrics verifies that the auth middleware
+// increments gonacos_token_validations_total{result="valid"} for a valid
+// token and {result="invalid"} for an invalid or missing token on a
+// protected route. These counters are the security monitoring signal for
+// token-guessing attacks and expired-token storms — a spike in
+// result="invalid" indicates either a misconfigured client or an attacker
+// probing tokens.
+func TestAuthMiddlewareTokenValidationMetrics(t *testing.T) {
+	svc, _, viewerToken := newAuthTestServices(t)
+	registry := observability.NewRegistry()
+	inner := echoHandler()
+	handler := newAuthMiddleware(svc, inner, registry)
+
+	// Valid (non-admin) token on a protected, non-admin route.
+	req := httptest.NewRequest(http.MethodGet, "/v3/cs/configs", nil)
+	req.Header.Set("Authorization", "Bearer "+viewerToken)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid token: got %d, want 200", rec.Code)
+	}
+
+	// Invalid token on the same route.
+	req2 := httptest.NewRequest(http.MethodGet, "/v3/cs/configs", nil)
+	req2.Header.Set("Authorization", "Bearer not-a-real-token")
+	rec2 := httptest.NewRecorder()
+	handler.ServeHTTP(rec2, req2)
+
+	// Missing token on an admin route (adminOnlyExactPaths).
+	req3 := httptest.NewRequest(http.MethodGet, "/v3/auth/user/list", nil)
+	rec3 := httptest.NewRecorder()
+	handler.ServeHTTP(rec3, req3)
+
+	validCount := registry.Counter("gonacos_token_validations_total", map[string]string{"result": "valid"}).Value()
+	invalidCount := registry.Counter("gonacos_token_validations_total", map[string]string{"result": "invalid"}).Value()
+	if validCount != 1 {
+		t.Fatalf("valid counter = %d, want 1", validCount)
+	}
+	if invalidCount != 2 {
+		t.Fatalf("invalid counter = %d, want 2 (one bad token, one missing on admin route)", invalidCount)
+	}
 }

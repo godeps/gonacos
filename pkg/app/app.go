@@ -189,7 +189,7 @@ func NewHandlerWithServicesAndRegistry(root string, services *ServiceBundle, coo
 	registerNamespaceRoutes(register, namespaceSvc, configSvc, services.AuditLogger)
 	registerConfigRoutes(register, configSvc, services.AuditLogger)
 	registerNamingRoutes(register, namingSvc)
-	registerAuthRoutes(register, authSvc, loginThrottle, services.AuditLogger)
+	registerAuthRoutes(register, authSvc, loginThrottle, services.AuditLogger, registry)
 	registerAIRoutes(register, aiSvc)
 	registerClusterRoutes(register, clusterSvc)
 	registerOpsRoutes(register, coord, registry, services.AuditLogger)
@@ -233,7 +233,7 @@ func NewHandlerWithServicesAndRegistry(root string, services *ServiceBundle, coo
 		})
 	})
 
-	return newAuthMiddleware(authSvc, mux)
+	return newAuthMiddleware(authSvc, mux, registry)
 }
 
 func okHandler(data string) http.HandlerFunc {

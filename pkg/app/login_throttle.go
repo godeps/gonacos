@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/godeps/gonacos/pkg/observability"
 	"github.com/godeps/gonacos/pkg/protocol"
 )
 
@@ -128,15 +129,25 @@ func (l *LoginThrottle) cleanup() {
 // loginThrottleMiddleware wraps the login handler with brute-force protection.
 // A locked (ip, username) pair receives 429 with Retry-After.
 type loginThrottleMiddleware struct {
-	throttle *LoginThrottle
-	next     http.HandlerFunc
+	throttle  *LoginThrottle
+	next      http.HandlerFunc
+	registry  *observability.Registry
+	loginOK   *observability.Counter
+	loginFail *observability.Counter
+	loginLock *observability.Counter
 }
 
-func newLoginThrottleMiddleware(throttle *LoginThrottle, next http.HandlerFunc) http.Handler {
+func newLoginThrottleMiddleware(throttle *LoginThrottle, next http.HandlerFunc, registry *observability.Registry) http.Handler {
 	if throttle == nil {
 		return next
 	}
-	return &loginThrottleMiddleware{throttle: throttle, next: next}
+	mw := &loginThrottleMiddleware{throttle: throttle, next: next, registry: registry}
+	if registry != nil {
+		mw.loginOK = registry.Counter("gonacos_login_attempts_total", map[string]string{"result": "success"})
+		mw.loginFail = registry.Counter("gonacos_login_attempts_total", map[string]string{"result": "failure"})
+		mw.loginLock = registry.Counter("gonacos_login_attempts_total", map[string]string{"result": "locked"})
+	}
+	return mw
 }
 
 func (m *loginThrottleMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -152,6 +163,9 @@ func (m *loginThrottleMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Reque
 			secs = 1
 		}
 		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		if m.loginLock != nil {
+			m.loginLock.Inc()
+		}
 		protocol.WriteError(w, http.StatusTooManyRequests, protocol.Error{
 			Code:    http.StatusTooManyRequests,
 			Message: "account temporarily locked due to repeated login failures",
@@ -168,8 +182,14 @@ func (m *loginThrottleMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Reque
 	}
 	if rec.status >= 200 && rec.status < 300 {
 		m.throttle.recordSuccess(ip, username)
+		if m.loginOK != nil {
+			m.loginOK.Inc()
+		}
 	} else if rec.status == http.StatusUnauthorized || rec.status == http.StatusForbidden {
 		m.throttle.recordFailure(ip, username)
+		if m.loginFail != nil {
+			m.loginFail.Inc()
+		}
 		// Opportunistic cleanup; cheap because the map is bounded by the
 		// rate limiter.
 		if n := m.throttle.entryCount(); n > 1000 {

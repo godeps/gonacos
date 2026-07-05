@@ -315,6 +315,21 @@ func New(opts ...Option) (*Server, error) {
 	if certFile != "" && keyFile != "" {
 		reloader, err := NewCertReloader(certFile, keyFile)
 		if err != nil {
+			// Cleanup everything wired before this point so a TLS
+			// misconfiguration doesn't leak ports, Redis connections,
+			// or background goroutines. Without this, a retry after a
+			// bad cert hits EADDRINUSE on the listeners and the
+			// embedded-Redis goroutine survives process exit.
+			stopPeriodic()
+			if s := redisSync; s != nil {
+				_ = s.Stop()
+			}
+			_ = grpcLn.Close()
+			_ = httpLn.Close()
+			_ = redisClient.Close()
+			if embeddedRedis != nil {
+				_ = embeddedRedis.Close()
+			}
 			return nil, fmt.Errorf("load TLS cert: %w", err)
 		}
 		tlsCfg = &tls.Config{

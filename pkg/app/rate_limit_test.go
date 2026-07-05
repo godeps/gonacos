@@ -51,9 +51,15 @@ func TestRateLimiterPerIP(t *testing.T) {
 	}
 }
 
-// TestRateLimiterXForwardedFor verifies that X-Forwarded-For is honored so
-// a deployment behind a layer-7 proxy gets per-client buckets.
+// TestRateLimiterXForwardedFor verifies that X-Forwarded-For is honored
+// when the peer is a configured trusted proxy, so a deployment behind
+// a layer-7 proxy gets per-client buckets. Without the trusted-proxy
+// gate, XFF would be ignored — a non-trusted peer must not be able to
+// forge XFF to bypass rate limits.
 func TestRateLimiterXForwardedFor(t *testing.T) {
+	defer func() { TrustedProxyChecker = nil }()
+	TrustedProxyChecker = NewCIDRProxyChecker([]string{"10.0.0.0/8"})
+
 	rl := NewRateLimiter(1, 1)
 	mw := NewRateLimitMiddleware(rl, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -61,7 +67,7 @@ func TestRateLimiterXForwardedFor(t *testing.T) {
 
 	// First request from XFF client A.
 	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
-	req1.RemoteAddr = "10.0.0.99:1234" // proxy
+	req1.RemoteAddr = "10.0.0.99:1234" // trusted proxy
 	req1.Header.Set("X-Forwarded-For", "203.0.113.1")
 	w1 := httptest.NewRecorder()
 	mw.ServeHTTP(w1, req1)
@@ -79,7 +85,8 @@ func TestRateLimiterXForwardedFor(t *testing.T) {
 		t.Fatalf("second request from XFF client A: got %d, want %d", w2.Code, http.StatusTooManyRequests)
 	}
 
-	// First request from XFF client B (different) passes.
+	// First request from XFF client B (different) passes — different
+	// XFF IP yields a fresh bucket.
 	req3 := httptest.NewRequest(http.MethodGet, "/", nil)
 	req3.RemoteAddr = "10.0.0.99:1234"
 	req3.Header.Set("X-Forwarded-For", "203.0.113.2")
@@ -87,6 +94,44 @@ func TestRateLimiterXForwardedFor(t *testing.T) {
 	mw.ServeHTTP(w3, req3)
 	if w3.Code != http.StatusOK {
 		t.Fatalf("first request from XFF client B: got %d, want %d", w3.Code, http.StatusOK)
+	}
+}
+
+// TestRateLimiterUntrustedProxyIgnoresXFF verifies that when the peer
+// is NOT a configured trusted proxy, X-Forwarded-For is ignored — a
+// non-trusted peer must not be able to forge XFF to get a fresh
+// rate-limit bucket on every request.
+func TestRateLimiterUntrustedProxyIgnoresXFF(t *testing.T) {
+	defer func() { TrustedProxyChecker = nil }()
+	TrustedProxyChecker = NewCIDRProxyChecker([]string{"10.0.0.0/8"})
+
+	rl := NewRateLimiter(1, 1)
+	mw := NewRateLimitMiddleware(rl, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// First request from a peer NOT in 10.0.0.0/8 — XFF should be
+	// ignored, RemoteAddr (203.0.113.99) used.
+	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req1.RemoteAddr = "203.0.113.99:1234"
+	req1.Header.Set("X-Forwarded-For", "1.1.1.1")
+	w1 := httptest.NewRecorder()
+	mw.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("first request: got %d, want %d", w1.Code, http.StatusOK)
+	}
+
+	// Second request, same RemoteAddr but DIFFERENT forged XFF — the
+	// forged XFF must be ignored, so this hits the same bucket and
+	// is throttled. Without the trusted-proxy gate, the forged XFF
+	// would yield a fresh bucket and the request would pass.
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.RemoteAddr = "203.0.113.99:1234"
+	req2.Header.Set("X-Forwarded-For", "2.2.2.2")
+	w2 := httptest.NewRecorder()
+	mw.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusTooManyRequests {
+		t.Fatalf("second request with forged XFF: got %d, want %d (forged XFF must NOT bypass rate limit)", w2.Code, http.StatusTooManyRequests)
 	}
 }
 

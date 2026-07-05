@@ -1,10 +1,8 @@
 package app
 
 import (
-	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -124,21 +122,13 @@ func (m *rateLimitMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	m.next.ServeHTTP(w, r)
 }
 
-// clientIPForLimit extracts the client IP for rate-limiting purposes. Honors
-// X-Forwarded-For (first hop) when present so a deployment behind a layer-7
-// proxy still gets per-client buckets; falls back to RemoteAddr.
+// clientIPForLimit extracts the client IP for rate-limiting purposes.
+// Honors X-Forwarded-For (first hop) only when the peer is a configured
+// trusted proxy; otherwise falls back to RemoteAddr. This prevents a
+// non-trusted peer from forging X-Forwarded-For to get a fresh
+// rate-limit bucket on every request.
 func clientIPForLimit(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.Index(xff, ","); idx > 0 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return clientIPFromRequest(r)
 }
 
 // maxBodyMiddleware wraps an http.Handler with a MaxBytesReader on the

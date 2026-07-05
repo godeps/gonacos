@@ -130,6 +130,23 @@ type options struct {
 	// Enable when the React console is served from a different origin than
 	// the API. Falls back to environment variables via resolveCORS.
 	CORS app.CORSConfig
+
+	// TrustedProxies is the list of CIDR ranges (e.g. "10.0.0.0/8",
+	// "192.168.1.5/32") from which the X-Forwarded-For and X-Real-IP
+	// headers are honored. When a request's RemoteAddr matches one of
+	// these ranges, the proxy-set headers are trusted to carry the
+	// real client IP; otherwise the headers are ignored and RemoteAddr
+	// is used directly.
+	//
+	// Empty (default) means no proxy is trusted — X-Forwarded-For is
+	// ignored entirely. This is the secure default: a direct deployment
+	// (no proxy in front) is not vulnerable to IP spoofing, and a
+	// proxied deployment must explicitly opt in by listing the proxy
+	// CIDRs. Without this gate, any client could forge the
+	// X-Forwarded-For header to bypass per-IP rate limits, evade login
+	// throttling, and pollute the audit trail with a spoofed IP.
+	// Falls back to the GONACOS_TRUSTED_PROXIES env var (comma-separated).
+	TrustedProxies []string
 }
 
 // GRPCKeepAliveConfig mirrors the gRPC server's keepalive config without
@@ -439,6 +456,22 @@ func WithAuditLogFile(path string) Option {
 // API; same-origin deployments can leave this disabled.
 func WithCORS(cfg app.CORSConfig) Option {
 	return func(o *options) { o.CORS = cfg }
+}
+
+// WithTrustedProxies configures the CIDR ranges (e.g. "10.0.0.0/8",
+// "192.168.1.5/32") from which X-Forwarded-For and X-Real-IP headers are
+// honored. When a request's RemoteAddr matches one of these ranges, the
+// proxy-set headers are trusted to carry the real client IP; otherwise
+// they are ignored and RemoteAddr is used directly.
+//
+// Empty (default) means no proxy is trusted — X-Forwarded-For is ignored
+// entirely, which is the secure default for a direct deployment. A proxied
+// deployment must explicitly opt in by listing the proxy CIDRs, otherwise
+// any client could forge X-Forwarded-For to bypass rate limits and pollute
+// the audit trail. Falls back to the GONACOS_TRUSTED_PROXIES env var
+// (comma-separated).
+func WithTrustedProxies(cidrs []string) Option {
+	return func(o *options) { o.TrustedProxies = cidrs }
 }
 
 // WithGRPCKeepAlive enables HTTP/2 PING-based liveness detection on the gRPC
@@ -902,6 +935,27 @@ func (o *options) resolveAuditLogFile() string {
 		return o.AuditLogFile
 	}
 	return os.Getenv("GONACOS_AUDIT_LOG_FILE")
+}
+
+// resolveTrustedProxies returns the list of CIDR ranges whose
+// X-Forwarded-For and X-Real-IP headers are honored. Returns the
+// explicitly configured list when set, otherwise the
+// GONACOS_TRUSTED_PROXIES env var (comma-separated), otherwise nil
+// (no proxy trusted — X-Forwarded-For is ignored entirely).
+func (o *options) resolveTrustedProxies() []string {
+	if len(o.TrustedProxies) > 0 {
+		return o.TrustedProxies
+	}
+	if v := os.Getenv("GONACOS_TRUSTED_PROXIES"); v != "" {
+		var out []string
+		for _, c := range strings.Split(v, ",") {
+			if c = strings.TrimSpace(c); c != "" {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // resolveCORS returns the effective CORS config. The explicitly configured

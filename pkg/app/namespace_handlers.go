@@ -3,7 +3,6 @@ package app
 import (
 	"errors"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -184,23 +183,17 @@ func formValue(r *http.Request, key string) string {
 	return r.Form.Get(key)
 }
 
-// clientIP extracts the client IP from a request, honoring the X-Forwarded-For
-// and X-Real-IP headers that proxies set. Falls back to r.RemoteAddr.
+// clientIP extracts the client IP from a request, honoring the
+// trusted-proxy gate. When the peer is a configured trusted proxy
+// (TrustedProxies option), X-Forwarded-For and X-Real-IP are
+// honored; otherwise those headers are ignored and RemoteAddr is
+// used directly. This prevents a non-trusted peer from forging the
+// IP that lands in audit logs and per-IP rate-limit buckets.
+//
+// Deprecated: prefer [clientIPFromRequest] (this function is now a
+// thin wrapper for backward compatibility with existing callers).
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.IndexByte(xff, ','); idx >= 0 {
-			return strings.TrimSpace(xff[:idx])
-		}
-		return strings.TrimSpace(xff)
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
+	return clientIPFromRequest(r)
 }
 
 func writeNamespaceError(w http.ResponseWriter, err error) {

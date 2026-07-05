@@ -74,6 +74,14 @@ func New(opts ...Option) (*Server, error) {
 	// is wired later, after the Redis client is constructed.
 	registry := observability.NewRegistry()
 	app.SetAuditMetricsRegistry(registry)
+	// Wire the trusted-proxy gate before any request is served. When
+	// the operator configures TrustedProxies (or GONACOS_TRUSTED_PROXIES),
+	// X-Forwarded-For and X-Real-IP from those peers are honored; from
+	// any other peer they are ignored, preventing IP spoofing attacks
+	// against rate limiting, login throttling, and audit logging.
+	// Empty list (the default) means no proxy is trusted — a direct
+	// deployment is not vulnerable to XFF forgery.
+	app.SetTrustedProxies(o.resolveTrustedProxies())
 
 	bundle := app.NewServiceBundleWithAuthSecret(o.resolveAuthSecret())
 	// Wire the server logger as the audit sink so security-relevant

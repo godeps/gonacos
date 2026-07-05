@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"log"
 	"strings"
 	"testing"
@@ -152,5 +153,150 @@ func TestResolveLoggerAppliesLevel(t *testing.T) {
 	}
 	if sl.level != ErrorLevel {
 		t.Fatalf("level: got %v, want ERROR", sl.level)
+	}
+}
+
+// TestParseLogFormat covers case-insensitive parsing and fallback to TEXT
+// for unknown values so a typo in GONACOS_LOG_FORMAT never breaks the server.
+func TestParseLogFormat(t *testing.T) {
+	cases := []struct {
+		in   string
+		want LogFormat
+	}{
+		{"", TextFormat},
+		{"text", TextFormat},
+		{"TEXT", TextFormat},
+		{"json", JSONFormat},
+		{"JSON", JSONFormat},
+		{"  json  ", JSONFormat},
+		{"bogus", TextFormat}, // unknown falls back to TEXT
+	}
+	for _, c := range cases {
+		got := ParseLogFormat(c.in)
+		if got != c.want {
+			t.Errorf("ParseLogFormat(%q) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}
+
+// TestJSONLoggerOutput verifies that the JSON logger emits one valid JSON
+// object per line with the expected ts/level/msg fields. This is the format
+// log collectors (ELK, Loki, Datadog) parse without extra configuration.
+func TestJSONLoggerOutput(t *testing.T) {
+	var buf bytes.Buffer
+	lg := &jsonLogger{
+		l:     log.New(&buf, "", 0),
+		level: InfoLevel,
+	}
+	lg.Infof("hello %s", "world")
+	lg.Warnf("warn %d", 42)
+	lg.Errorf("err %v", "boom")
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d: %q", len(lines), buf.String())
+	}
+
+	for i, want := range []struct {
+		level, msg string
+	}{
+		{"INFO", "hello world"},
+		{"WARN", "warn 42"},
+		{"ERROR", "err boom"},
+	} {
+		var rec map[string]string
+		if err := json.Unmarshal([]byte(lines[i]), &rec); err != nil {
+			t.Fatalf("line %d not valid JSON: %v (line=%q)", i, err, lines[i])
+		}
+		if rec["level"] != want.level {
+			t.Errorf("line %d level: got %q, want %q", i, rec["level"], want.level)
+		}
+		if rec["msg"] != want.msg {
+			t.Errorf("line %d msg: got %q, want %q", i, rec["msg"], want.msg)
+		}
+		if rec["ts"] == "" {
+			t.Errorf("line %d ts missing", i)
+		}
+	}
+}
+
+// TestJSONLoggerLevelFiltering verifies that the JSON logger suppresses
+// lower-severity messages based on the configured level, matching the
+// stdLogger behavior so operators can switch formats without losing filtering.
+func TestJSONLoggerLevelFiltering(t *testing.T) {
+	cases := []struct {
+		name     string
+		level    LogLevel
+		infoWant bool
+		warnWant bool
+		errWant  bool
+	}{
+		{"debug emits all", DebugLevel, true, true, true},
+		{"info emits all", InfoLevel, true, true, true},
+		{"warn suppresses info", WarnLevel, false, true, true},
+		{"error suppresses info+warn", ErrorLevel, false, false, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			lg := &jsonLogger{
+				l:     log.New(&buf, "", 0),
+				level: c.level,
+			}
+			lg.Infof("info msg %d", 1)
+			lg.Warnf("warn msg %d", 2)
+			lg.Errorf("err msg %d", 3)
+
+			got := buf.String()
+			hasInfo := strings.Contains(got, `"msg":"info msg 1"`)
+			hasWarn := strings.Contains(got, `"msg":"warn msg 2"`)
+			hasErr := strings.Contains(got, `"msg":"err msg 3"`)
+			if hasInfo != c.infoWant {
+				t.Errorf("INFO line: got %v, want %v. buffer=%q", hasInfo, c.infoWant, got)
+			}
+			if hasWarn != c.warnWant {
+				t.Errorf("WARN line: got %v, want %v. buffer=%q", hasWarn, c.warnWant, got)
+			}
+			if hasErr != c.errWant {
+				t.Errorf("ERROR line: got %v, want %v. buffer=%q", hasErr, c.errWant, got)
+			}
+		})
+	}
+}
+
+// TestResolveLogFormatFromEnv verifies that GONACOS_LOG_FORMAT is honored
+// when no explicit option is set.
+func TestResolveLogFormatFromEnv(t *testing.T) {
+	o := options{}
+	t.Setenv("GONACOS_LOG_FORMAT", "json")
+	if got := o.resolveLogFormat(); got != JSONFormat {
+		t.Fatalf("env JSON: got %v, want JSON", got)
+	}
+}
+
+// TestResolveLogFormatDefault verifies the default is TEXT when neither the
+// option nor the env var is set.
+func TestResolveLogFormatDefault(t *testing.T) {
+	o := options{}
+	t.Setenv("GONACOS_LOG_FORMAT", "")
+	if got := o.resolveLogFormat(); got != TextFormat {
+		t.Fatalf("default: got %v, want TEXT", got)
+	}
+}
+
+// TestResolveLoggerSelectsJSON verifies that resolveLogger returns a jsonLogger
+// when GONACOS_LOG_FORMAT=json, so operators get structured logs by setting
+// one env var without code changes.
+func TestResolveLoggerSelectsJSON(t *testing.T) {
+	t.Setenv("GONACOS_LOG_FORMAT", "json")
+	o := options{}
+	lg := o.resolveLogger()
+
+	jl, ok := lg.(*jsonLogger)
+	if !ok {
+		t.Fatalf("expected *jsonLogger, got %T", lg)
+	}
+	if jl.level != InfoLevel {
+		t.Fatalf("level: got %v, want INFO", jl.level)
 	}
 }

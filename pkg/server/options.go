@@ -89,6 +89,12 @@ type options struct {
 	// passed via [WithLogger] is responsible for its own filtering.
 	LogLevel *LogLevel
 
+	// LogFormat selects the output format of the default logger. A nil
+	// pointer falls back to resolveLogFormat (GONACOS_LOG_FORMAT env var,
+	// default text). Only affects the default logger; a custom [Logger]
+	// passed via [WithLogger] is responsible for its own format.
+	LogFormat *LogFormat
+
 	// MetricsToken, when non-empty, requires scrapers to present it as a
 	// Bearer token (Authorization: Bearer <token>) on the /metrics endpoint.
 	// When empty (default), /metrics is publicly accessible — appropriate
@@ -313,6 +319,17 @@ func WithLogLevel(level LogLevel) Option {
 	return func(o *options) { o.LogLevel = &l }
 }
 
+// WithLogFormat selects the output format of the default logger. TextFormat
+// (default) writes "LEVEL  message" lines for humans; JSONFormat writes
+// one JSON object per line for log collectors (ELK, Loki, Datadog). Falls
+// back to the GONACOS_LOG_FORMAT env var (case-insensitive: text, json;
+// unknown values default to text). Only affects the default logger; a
+// custom Logger passed via [WithLogger] is responsible for its own format.
+func WithLogFormat(format LogFormat) Option {
+	f := format
+	return func(o *options) { o.LogFormat = &f }
+}
+
 // WithMetricsToken requires scrapers to present the given Bearer token on
 // the /metrics endpoint. When unset (default), /metrics is publicly
 // accessible. Production deployments should set a token to prevent
@@ -432,7 +449,20 @@ func (o *options) resolveLogger() Logger {
 	if o.Logger != nil {
 		return o.Logger
 	}
+	if o.resolveLogFormat() == JSONFormat {
+		return newJSONLogger(o.resolveLogLevel())
+	}
 	return newStdLogger(o.resolveLogLevel())
+}
+
+// resolveLogFormat returns the configured log format. Explicit option wins;
+// otherwise the GONACOS_LOG_FORMAT env var is consulted (case-insensitive
+// "text" or "json"); unknown values fall back to TextFormat.
+func (o *options) resolveLogFormat() LogFormat {
+	if o.LogFormat != nil {
+		return *o.LogFormat
+	}
+	return ParseLogFormat(os.Getenv("GONACOS_LOG_FORMAT"))
 }
 
 func (o *options) resolveStrictSnapshot() bool {

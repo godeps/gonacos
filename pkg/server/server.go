@@ -17,6 +17,7 @@ import (
 	"github.com/godeps/gonacos/pkg/store"
 	"github.com/godeps/gonacos/pkg/version"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/net/http2"
 )
 
 // Server is an embeddable gonacos instance. Construct with [New] and run
@@ -404,6 +405,35 @@ func New(opts ...Option) (*Server, error) {
 			MinVersion:     o.resolveTLSMinVersion(),
 		}
 		httpSrv.TLSConfig = tlsCfg
+		// Wire HTTP/2 hardening on the HTTP server, mirroring the gRPC
+		// server's configureHTTP2. Without this, the HTTP/2 path
+		// (negotiated via ALPN h2) uses Go's defaults: MaxConcurrentStreams
+		// uncapped (a peer can open 100 streams per connection, holding
+		// 100 goroutines + frame-buffer headroom), WriteByteTimeout
+		// disabled (a slow client cannot drain the server's response
+		// buffer, holding a goroutine + buffered bytes indefinitely).
+		// These are HTTP/2 protocol-level configs, not gRPC-specific —
+		// reuse the GRPC* knob values so operators have one dial per
+		// protocol-level concern. MaxConcurrentStreams: <0 means
+		// "disabled" on the gRPC side (return 0 there); translate to
+		// http2.Server.MaxConcurrentStreams=0 here, which lets Go's
+		// http2 stack apply its own 100 default.
+		maxStreams := o.resolveGRPCMaxConcurrentStreams()
+		if maxStreams < 0 {
+			maxStreams = 0
+		}
+		h2s := &http2.Server{
+			IdleTimeout:          httpSrv.IdleTimeout,
+			MaxConcurrentStreams: uint32(maxStreams),
+			WriteByteTimeout:     o.resolveGRPCWriteByteTimeout(),
+		}
+		if ka := o.resolveGRPCKeepAlive(); ka.ReadIdleTimeout > 0 {
+			h2s.ReadIdleTimeout = ka.ReadIdleTimeout
+			if ka.PingTimeout > 0 {
+				h2s.PingTimeout = ka.PingTimeout
+			}
+		}
+		_ = http2.ConfigureServer(httpSrv, h2s)
 	}
 
 	return &Server{

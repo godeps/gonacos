@@ -242,6 +242,16 @@ func New(opts ...Option) (*Server, error) {
 	certFile, keyFile := o.resolveTLS()
 	httpHandler = app.NewSecurityHeadersMiddleware(certFile != "" && keyFile != "", httpHandler)
 
+	// CORS sits just inside security headers so preflight OPTIONS requests
+	// get the standard security headers (nosniff, frame-options) on the way
+	// out, and the CORS response headers are set before any auth/rate-limit
+	// check runs. The middleware is a no-op when CORS is disabled (default,
+	// same-origin deployments). Preflight requests are short-circuited to
+	// 204 without delegating to the inner handler.
+	if corsCfg := o.resolveCORS(); corsCfg.Enabled {
+		httpHandler = app.NewCORSMiddleware(corsCfg, httpHandler)
+	}
+
 	writeTimeout := o.resolveHTTPWriteTimeout()
 	idleTimeout := o.resolveHTTPIdleTimeout()
 	httpSrv := &http.Server{

@@ -103,6 +103,12 @@ type options struct {
 	// is the operator's responsibility (logrotate(8) with copytruncate).
 	// When empty (default), audit events go only to the application logger.
 	AuditLogFile string
+
+	// CORS configures cross-origin resource sharing for the HTTP API. The
+	// middleware is a no-op when CORSConfig.Enabled is false (the default).
+	// Enable when the React console is served from a different origin than
+	// the API. Falls back to environment variables via resolveCORS.
+	CORS app.CORSConfig
 }
 
 // GRPCKeepAliveConfig mirrors the gRPC server's keepalive config without
@@ -325,6 +331,16 @@ func WithMetricsToken(token string) Option {
 // GONACOS_AUDIT_LOG_FILE env var.
 func WithAuditLogFile(path string) Option {
 	return func(o *options) { o.AuditLogFile = path }
+}
+
+// WithCORS enables cross-origin resource sharing for the HTTP API. Pass a
+// populated CORSConfig with Enabled=true to activate; the middleware is a
+// no-op when Enabled is false. Falls back to environment variables
+// (GONACOS_CORS_ENABLED, GONACOS_CORS_ALLOW_ORIGINS, etc.) via resolveCORS.
+// Enable when the React console is served from a different origin than the
+// API; same-origin deployments can leave this disabled.
+func WithCORS(cfg app.CORSConfig) Option {
+	return func(o *options) { o.CORS = cfg }
 }
 
 // WithGRPCKeepAlive enables HTTP/2 PING-based liveness detection on the gRPC
@@ -658,6 +674,59 @@ func (o *options) resolveAuditLogFile() string {
 		return o.AuditLogFile
 	}
 	return os.Getenv("GONACOS_AUDIT_LOG_FILE")
+}
+
+// resolveCORS returns the effective CORS config. The explicitly configured
+// CORS field wins; when its Enabled flag is false, environment variables
+// are consulted so operators can enable CORS without code changes:
+//
+//   - GONACOS_CORS_ENABLED=1            — gate the middleware
+//   - GONACOS_CORS_ALLOW_ORIGINS        — comma-separated origin list
+//   - GONACOS_CORS_ALLOW_METHODS        — comma-separated method list
+//   - GONACOS_CORS_ALLOW_HEADERS        — comma-separated header list
+//   - GONACOS_CORS_ALLOW_CREDENTIALS=1  — emit Allow-Credentials: true
+//   - GONACOS_CORS_MAX_AGE              — preflight cache seconds
+//
+// When GONACOS_CORS_ENABLED is unset (or "0"), CORS stays disabled.
+func (o *options) resolveCORS() app.CORSConfig {
+	if o.CORS.Enabled {
+		return o.CORS
+	}
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("GONACOS_CORS_ENABLED"))); v != "1" && v != "true" {
+		return app.CORSConfig{}
+	}
+	cfg := app.CORSConfig{Enabled: true}
+	if v := os.Getenv("GONACOS_CORS_ALLOW_ORIGINS"); v != "" {
+		for _, o := range strings.Split(v, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				cfg.AllowOrigins = append(cfg.AllowOrigins, o)
+			}
+		}
+	}
+	if v := os.Getenv("GONACOS_CORS_ALLOW_METHODS"); v != "" {
+		for _, m := range strings.Split(v, ",") {
+			if m = strings.TrimSpace(m); m != "" {
+				cfg.AllowMethods = append(cfg.AllowMethods, strings.ToUpper(m))
+			}
+		}
+	}
+	if v := os.Getenv("GONACOS_CORS_ALLOW_HEADERS"); v != "" {
+		for _, h := range strings.Split(v, ",") {
+			if h = strings.TrimSpace(h); h != "" {
+				cfg.AllowHeaders = append(cfg.AllowHeaders, h)
+			}
+		}
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GONACOS_CORS_ALLOW_CREDENTIALS"))) {
+	case "1", "true", "yes":
+		cfg.AllowCredentials = true
+	}
+	if v := os.Getenv("GONACOS_CORS_MAX_AGE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			cfg.MaxAge = n
+		}
+	}
+	return cfg
 }
 
 // resolveGRPCKeepAlive returns the gRPC HTTP/2 keepalive config. Returns the

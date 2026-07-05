@@ -2,7 +2,11 @@ package store
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -39,6 +43,16 @@ type RedisPersistence struct {
 	// the call site so the periodic ticker can record outcomes without
 	// the caller wiring each call.
 	metrics *observability.Registry
+
+	// hmacKey authenticates the disk dump file. When non-empty, Save
+	// writes a sibling .hmac file containing the HMAC-SHA256 of the dump
+	// bytes; Load verifies the HMAC before unmarshalling and rejects a
+	// tampered dump. Empty skips both writing and verification — old
+	// dumps still load without migration. Wired by [server.New] via
+	// SetHMACKey from the resolved snapshot HMAC key (or auth secret
+	// fallback), so a single secret secures both tokens and snapshots
+	// in a default deployment.
+	hmacKey []byte
 
 	// saveMu serializes Save calls so the periodic ticker and a shutdown
 	// Save cannot trip over each other's rotation/write. Without this,
@@ -91,6 +105,38 @@ func (p *RedisPersistence) SetBackupCount(n int) {
 func (p *RedisPersistence) SetMetricsRegistry(r *observability.Registry) {
 	p.metrics = r
 }
+
+// SetHMACKey wires the HMAC-SHA256 key used to authenticate the disk dump
+// file. When set (non-empty), Save writes a sibling .hmac file containing
+// the hex-encoded HMAC of the dump bytes; Load verifies the HMAC before
+// unmarshalling and rejects a tampered dump with ErrSnapshotTampered.
+//
+// Empty key skips both writing and verification — pre-HMAC dumps still
+// load without migration, so an operator can roll forward without a
+// data migration. Once a Save runs with a key set, the .hmac file is
+// written; subsequent Loads with the same key verify it. A Load that
+// finds a dump file without a .hmac file (e.g., the first Save after
+// the key is configured, or an old dump) skips verification and loads
+// as before — only a present-but-mismatched HMAC is a failure.
+//
+// The key is copied so the caller may mutate their slice afterwards.
+func (p *RedisPersistence) SetHMACKey(key []byte) {
+	if len(key) == 0 {
+		p.hmacKey = nil
+		return
+	}
+	cp := make([]byte, len(key))
+	copy(cp, key)
+	p.hmacKey = cp
+}
+
+// ErrSnapshotTampered is returned by Load when the dump file's HMAC does
+// not match the computed HMAC of the dump bytes. This indicates the file
+// was modified outside gonacos — either by an attacker replacing it to
+// inject state (e.g., a malicious admin account), or by a corrupted
+// backup/restore pipeline. The dump is NOT loaded; the operator must
+// investigate before retrying.
+var ErrSnapshotTampered = errors.New("snapshot dump tampered: HMAC mismatch")
 
 // recordSaveResult increments the save counter and observes the duration.
 // Best-effort: a nil registry or a malformed result string is silently
@@ -150,6 +196,17 @@ func (p *RedisPersistence) Save(ctx context.Context) error {
 			p.recordSaveResult("failure", time.Since(start))
 			return fmt.Errorf("write dump: %w", err)
 		}
+		// Write the HMAC after the dump is in place. A missing .hmac
+		// file on Load is treated as "skip verification" (above), so a
+		// crash between writing the dump and writing the HMAC still
+		// yields a loadable snapshot — just unverified. The next Save
+		// will write both atomically from the operator's perspective.
+		if len(p.hmacKey) > 0 {
+			if err := writeHMACFile(p.dumpPath, p.hmacKey, data); err != nil {
+				p.recordSaveResult("failure", time.Since(start))
+				return fmt.Errorf("write dump hmac: %w", err)
+			}
+		}
 	}
 	p.recordSaveResult("success", time.Since(start))
 	return nil
@@ -159,6 +216,14 @@ func (p *RedisPersistence) Save(ctx context.Context) error {
 // services. If the Redis key is missing and dumpPath is set, the envelope is
 // loaded from disk and pushed into Redis so subsequent reads find it. A
 // missing snapshot (fresh start) is not an error.
+//
+// When an HMAC key is configured (via SetHMACKey) and a sibling .hmac file
+// exists alongside the dump, the dump's HMAC is verified before
+// unmarshalling. A mismatch returns ErrSnapshotTampered and the dump is
+// NOT loaded — the operator must investigate. A missing .hmac file (e.g.,
+// the first Save after the key is configured, or a pre-HMAC dump) skips
+// verification and loads as before — only a present-but-mismatched HMAC
+// is a failure, so rolling out the key never breaks existing deployments.
 func (p *RedisPersistence) Load(ctx context.Context) error {
 	data, err := p.client.Get(ctx, snapshotKey).Bytes()
 	if err == redis.Nil {
@@ -176,6 +241,13 @@ func (p *RedisPersistence) Load(ctx context.Context) error {
 			}
 			p.recordLoadResult("failure")
 			return fmt.Errorf("read dump: %w", err)
+		}
+		// Verify HMAC before repopulating Redis. A tampered dump that
+		// loaded into Redis would persist beyond a restart even after
+		// the dump file is fixed — verify at the disk boundary.
+		if err := p.verifyDumpHMAC(data); err != nil {
+			p.recordLoadResult("failure")
+			return err
 		}
 		// Repopulate Redis so future loads hit the cache.
 		if setErr := p.client.Set(ctx, snapshotKey, data, 0).Err(); setErr != nil {
@@ -293,6 +365,71 @@ func writeDumpFile(path string, data []byte) error {
 	if err := os.Rename(tmpName, path); err != nil {
 		_ = os.Remove(tmpName)
 		return err
+	}
+	return nil
+}
+
+// hmacFilePath returns the path to the HMAC file paired with the dump at
+// dumpPath. Kept as a function so the pairing convention is in one place:
+// add ".hmac" to the dump path. (snapshot.json -> snapshot.json.hmac.)
+func hmacFilePath(dumpPath string) string {
+	return dumpPath + ".hmac"
+}
+
+// writeHMACFile computes the HMAC-SHA256 of data under key and writes the
+// hex-encoded digest to a sibling .hmac file. The file is plain text (one
+// line, no newline) so it's greppable and diff-friendly for operators
+// inspecting rotation. Atomic write via writeDumpFile so a crash mid-write
+// cannot leave a half-written HMAC that would fail verification on next
+// Load.
+//
+// The HMAC is computed over the exact bytes that will be loaded — not the
+// JSON envelope in memory — so a byte-level tamper (flipping a single bit
+// in the dump file) is detected even if the resulting JSON is still valid.
+func writeHMACFile(dumpPath string, key, data []byte) error {
+	mac := hmac.New(sha256.New, key)
+	mac.Write(data)
+	sum := mac.Sum(nil)
+	encoded := make([]byte, hex.EncodedLen(len(sum)))
+	hex.Encode(encoded, sum)
+	return writeDumpFile(hmacFilePath(dumpPath), encoded)
+}
+
+// verifyDumpHMAC checks the dump against the sibling .hmac file. Three
+// outcomes:
+//
+//   - No HMAC key configured: skip (nil). Old behavior — dumps load
+//     without verification. The operator opted out.
+//   - Key configured but no .hmac file: skip (nil). This is the rollout
+//     window — the first Save after the key is set writes the .hmac file;
+//     pre-existing dumps load without verification until then. A missing
+//     HMAC file is not a tamper signal; a present-but-wrong one is.
+//   - Key configured and .hmac file present: compare. Mismatch returns
+//     ErrSnapshotTampered. The dump is NOT loaded.
+//
+// hmac.Equal is used for the comparison (constant-time) so an attacker
+// observing Load timing cannot leak the correct HMAC byte-by-byte via
+// a comparison-side-channel.
+func (p *RedisPersistence) verifyDumpHMAC(data []byte) error {
+	if len(p.hmacKey) == 0 {
+		return nil
+	}
+	expected, err := os.ReadFile(hmacFilePath(p.dumpPath))
+	if err != nil {
+		if os.IsNotExist(err) {
+			// No .hmac file — skip verification. This is the
+			// rollout window or an old dump.
+			return nil
+		}
+		return fmt.Errorf("read dump hmac: %w", err)
+	}
+	mac := hmac.New(sha256.New, p.hmacKey)
+	mac.Write(data)
+	sum := mac.Sum(nil)
+	encoded := make([]byte, hex.EncodedLen(len(sum)))
+	hex.Encode(encoded, sum)
+	if !hmac.Equal(expected, encoded) {
+		return ErrSnapshotTampered
 	}
 	return nil
 }

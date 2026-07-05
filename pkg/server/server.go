@@ -116,6 +116,13 @@ func New(opts ...Option) (*Server, error) {
 
 	persist := store.NewRedisPersistence(redisClient, coord, dumpPath)
 	persist.SetBackupCount(o.resolveSnapshotBackupCount())
+	// Wire the snapshot HMAC key so the disk dump is authenticated. A
+	// tampered dump (e.g., an attacker replacing the file to inject a
+	// malicious admin account) is rejected at Load with
+	// ErrSnapshotTampered. Empty key skips verification — backward
+	// compatible with pre-HMAC dumps. Defaults to the auth secret so a
+	// single secret secures both tokens and snapshots.
+	persist.SetHMACKey([]byte(o.resolveSnapshotHMACKey()))
 	// Wire snapshot metrics into the persistence layer. The metrics are
 	// the data-loss signal: alert on gonacos_snapshot_saves_total{result=
 	// "failure"} rate > 0, and on time() - gonacos_last_snapshot_save_

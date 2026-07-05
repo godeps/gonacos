@@ -20,6 +20,7 @@ type options struct {
 	SnapshotInterval time.Duration
 	Root             string
 	AuthSecret       string
+	SnapshotHMACKey  string
 	TLSCertFile      string
 	TLSKeyFile       string
 	Logger           Logger
@@ -242,6 +243,18 @@ func WithRoot(root string) Option {
 // across nodes). Falls back to the GONACOS_AUTH_SECRET env var.
 func WithAuthSecret(secret string) Option {
 	return func(o *options) { o.AuthSecret = secret }
+}
+
+// WithSnapshotHMACKey sets the HMAC-SHA256 key used to authenticate the
+// disk dump file. When set, Save computes the HMAC of the dump bytes and
+// writes it to a sibling .hmac file; Load verifies the HMAC before
+// unmarshalling, rejecting a tampered dump (e.g., an attacker who replaced
+// the file to inject a malicious admin account). Falls back to the
+// GONACOS_SNAPSHOT_HMAC_KEY env var, then to the auth secret (so a single
+// secret secures both tokens and snapshots in a default deployment). When
+// no key is resolvable, verification is skipped — old dumps still load.
+func WithSnapshotHMACKey(key string) Option {
+	return func(o *options) { o.SnapshotHMACKey = key }
 }
 
 // WithTLS enables TLS on both the HTTP and gRPC listeners. certFile and
@@ -602,6 +615,25 @@ func (o *options) resolveAuthSecret() string {
 		return o.AuthSecret
 	}
 	return os.Getenv("GONACOS_AUTH_SECRET")
+}
+
+// resolveSnapshotHMACKey returns the HMAC key to authenticate the disk
+// dump file, or empty string to skip verification. Resolution order:
+//  1. WithSnapshotHMACKey (explicit)
+//  2. GONACOS_SNAPSHOT_HMAC_KEY env var
+//  3. The auth secret (single-secret default: one secret secures both
+//     tokens and snapshots). When the auth secret is also empty — e.g.,
+//     a standalone dev instance with no configured secret — the empty
+//     return skips verification, preserving the pre-HMAC load behavior
+//     so old dumps still load.
+func (o *options) resolveSnapshotHMACKey() string {
+	if o.SnapshotHMACKey != "" {
+		return o.SnapshotHMACKey
+	}
+	if v := os.Getenv("GONACOS_SNAPSHOT_HMAC_KEY"); v != "" {
+		return v
+	}
+	return o.resolveAuthSecret()
 }
 
 func (o *options) resolveTLS() (cert, key string) {

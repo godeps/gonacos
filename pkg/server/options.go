@@ -71,6 +71,12 @@ type options struct {
 	// descriptor, defeating the cap. Pair with the per-IP rate limiter
 	// for request-level protection.
 	MaxConns int
+
+	// LogLevel controls which messages the default stdLogger emits. A nil
+	// pointer falls back to resolveLogLevel (GONACOS_LOG_LEVEL env var,
+	// default INFO). Only affects the default logger; a custom [Logger]
+	// passed via [WithLogger] is responsible for its own filtering.
+	LogLevel *LogLevel
 }
 
 // Option configures a Server at construction time. Pass to [New].
@@ -254,6 +260,19 @@ func WithMaxConns(max int) Option {
 	return func(o *options) { o.MaxConns = max }
 }
 
+// WithLogLevel sets the minimum log level emitted by the default logger.
+// DEBUG: all messages (currently equivalent to INFO since the default
+// logger has no Debugf method). INFO: Infof and Warnf (default). WARN:
+// Warnf only. ERROR: nothing (both Infof and Warnf suppressed). Falls back
+// to the GONACOS_LOG_LEVEL env var (case-insensitive: DEBUG, INFO, WARN,
+// ERROR; unknown values default to INFO). Only affects the default
+// stdLogger; a custom Logger passed via [WithLogger] is responsible for
+// its own filtering.
+func WithLogLevel(level LogLevel) Option {
+	l := level
+	return func(o *options) { o.LogLevel = &l }
+}
+
 func (o *options) resolveAddr() string {
 	if o.Addr != "" {
 		return o.Addr
@@ -326,7 +345,7 @@ func (o *options) resolveLogger() Logger {
 	if o.Logger != nil {
 		return o.Logger
 	}
-	return defaultLogger
+	return newStdLogger(o.resolveLogLevel())
 }
 
 func (o *options) resolveStrictSnapshot() bool {
@@ -535,6 +554,18 @@ func (o *options) resolveMaxConns() int {
 		}
 	}
 	return 10000
+}
+
+// resolveLogLevel returns the minimum log level the default logger emits.
+// Returns the explicitly configured level when set, otherwise the
+// GONACOS_LOG_LEVEL env var (case-insensitive: DEBUG, INFO, WARN, ERROR),
+// otherwise InfoLevel. Unknown env var values fall back to InfoLevel so a
+// typo never silently suppresses all logs.
+func (o *options) resolveLogLevel() LogLevel {
+	if o.LogLevel != nil {
+		return *o.LogLevel
+	}
+	return ParseLogLevel(os.Getenv("GONACOS_LOG_LEVEL"))
 }
 
 // splitHostPort splits an address into host and port. Returns "127.0.0.1" and

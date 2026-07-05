@@ -135,7 +135,8 @@ Options (`server.With*`):
 | `WithRoot(root)` | `.` | Project root for OpenAPI contract enumeration (501 stubs for unimplemented endpoints). |
 | `WithAuthSecret(secret)` | random per-process | HMAC-SHA256 token signing secret. **Set this** when running multiple nodes that must verify each other's tokens. |
 | `WithTLS(certFile, keyFile)` | `""` (plaintext) | PEM-encoded cert + key for TLS on both HTTP and gRPC. gRPC negotiates HTTP/2 via ALPN. |
-| `WithLogger(l)` | stderr via `log` | Plug in a structured logger (zap, zerolog, slog) by wrapping it to match the `Logger` interface. |
+| `WithLogger(l)` | stderr via `log` | Plug in a structured logger (zap, zerolog, slog) by wrapping it to match the `Logger` interface. Custom loggers are responsible for their own level filtering; use `WithLogLevel` for the default stderr logger. |
+| `WithLogLevel(level)` | `INFO` | Minimum log level the default stderr logger emits. `WARN` suppresses INFO lines; `ERROR` suppresses both INFO and WARN. Only affects the default logger — a custom `WithLogger` is untouched. |
 | `WithStrictSnapshot(bool)` | `false` | When `true`, `New` returns an error if the snapshot fails to load instead of starting with empty state. |
 | `WithHTTPRateLimit(rps, burst)` | `0` (disabled) | Per-client-IP token bucket rate limit on HTTP. Honors `X-Forwarded-For` for layer-7 proxy deployments. Recommended production: `100, 200`. |
 | `WithHTTPMaxBody(bytes)` | `10485760` (10 MiB) | Maximum HTTP request body size. Oversized bodies return 413. Pass `-1` to disable (not recommended). |
@@ -170,6 +171,7 @@ Environment variable fallbacks (used when the corresponding option is not set):
 | `GONACOS_SHUTDOWN_TIMEOUT` | `WithShutdownTimeout` (Go duration; default `30s`; `-1` = wait forever) |
 | `GONACOS_GRPC_MAX_FRAME_BYTES` | `WithGRPCMaxFrameBytes` (int bytes; default `4194304` = 4 MiB; `-1` = unlimited, not recommended) |
 | `GONACOS_MAX_CONNS` | `WithMaxConns` (int; default `10000`; `-1` = unlimited, not recommended) |
+| `GONACOS_LOG_LEVEL` | `WithLogLevel` (case-insensitive: `DEBUG`, `INFO`, `WARN`, `ERROR`; default `INFO`; unknown values fall back to `INFO` so a typo never suppresses all logs) |
 
 ## Production hardening
 

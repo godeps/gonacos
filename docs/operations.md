@@ -25,7 +25,7 @@ Nacos convention of HTTP port + 1000 (e.g. `8848` → `9848`).
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `GONACOS_ADDR` | `:8848` | HTTP listen address |
-| `GONACOS_LOG_LEVEL` | `INFO` | Process log level |
+| `GONACOS_LOG_LEVEL` | `INFO` | Process log level (case-insensitive: `DEBUG`, `INFO`, `WARN`, `ERROR`; unknown values default to `INFO`). `WARN` suppresses INFO lines; `ERROR` suppresses both INFO and WARN. Only affects the default stderr logger; a custom logger passed via `WithLogger` is responsible for its own filtering. |
 | `GONACOS_ROOT` | `.` | Working directory for contract files |
 | `GONACOS_REDIS_ADDR` | (unset) | Redis address for storage and multi-node sync. When set, the process uses the external Redis for both snapshot persistence (key `gonacos:snapshot`) and pub/sub sync. When unset, the process starts an embedded miniredis for in-process persistence with a disk-backed dump, and runs in standalone mode (no cross-node sync). |
 | `GONACOS_DATA_DIR` | `<root>/.gonacos/data` | Directory for the embedded Redis disk dump (`snapshot.json`). Only used in standalone (embedded) mode. |

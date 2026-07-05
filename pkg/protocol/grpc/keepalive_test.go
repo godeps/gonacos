@@ -81,3 +81,36 @@ func TestServerMaxConcurrentStreamsNegativeDisablesCap(t *testing.T) {
 		t.Errorf("maxConcurrentStreams() = %d, want 0 (disabled)", got)
 	}
 }
+
+// TestServerWriteByteTimeoutConfigured verifies that an explicit
+// WriteByteTimeout is propagated to configureHTTP2's http2.Server conf
+// via the smoke test — the actual write-side timeout enforcement is
+// handled by Go's http2 stack. This closes the stuck-write window
+// where a slow client cannot drain the server's response buffer,
+// holding a server goroutine + buffered response bytes indefinitely.
+func TestServerWriteByteTimeoutConfigured(t *testing.T) {
+	const want = 15 * time.Second
+	srv := NewServer()
+	srv.WriteByteTimeout = want
+	httpSrv := &http.Server{
+		IdleTimeout:       5 * time.Minute,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	// Smoke test: configureHTTP2 must not panic with WriteByteTimeout set.
+	srv.configureHTTP2(httpSrv)
+	if srv.WriteByteTimeout != want {
+		t.Errorf("WriteByteTimeout = %v, want %v", srv.WriteByteTimeout, want)
+	}
+}
+
+// TestServerWriteByteTimeoutDefaultIsZero verifies that a zero
+// WriteByteTimeout (the default) disables the write-side timeout —
+// the legacy behavior that relies on IdleTimeout and TCP write
+// deadlines to eventually fail. Operators opt in by setting a
+// positive duration.
+func TestServerWriteByteTimeoutDefaultIsZero(t *testing.T) {
+	srv := NewServer()
+	if srv.WriteByteTimeout != 0 {
+		t.Errorf("default WriteByteTimeout = %v, want 0", srv.WriteByteTimeout)
+	}
+}

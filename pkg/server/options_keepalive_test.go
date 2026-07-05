@@ -200,3 +200,37 @@ func TestResolveGRPCMaxConcurrentStreamsNegativeDisables(t *testing.T) {
 		t.Errorf("negative resolveGRPCMaxConcurrentStreams = %d, want -1", got)
 	}
 }
+
+// TestResolveGRPCWriteByteTimeoutDefaultIsZero verifies that a zero
+// options struct resolves to 0 (disabled) — the legacy behavior that
+// relies on IdleTimeout and TCP write deadlines to eventually fail.
+// Operators opt in by setting a positive duration.
+func TestResolveGRPCWriteByteTimeoutDefaultIsZero(t *testing.T) {
+	o := options{}
+	got := o.resolveGRPCWriteByteTimeout()
+	if got != 0 {
+		t.Errorf("default resolveGRPCWriteByteTimeout = %v, want 0", got)
+	}
+}
+
+// TestResolveGRPCWriteByteTimeoutExplicit verifies that an explicit
+// WithGRPCWriteByteTimeout option wins over env vars.
+func TestResolveGRPCWriteByteTimeoutExplicit(t *testing.T) {
+	t.Setenv("GONACOS_GRPC_WRITE_BYTE_TIMEOUT", "99s")
+	o := options{GRPCWriteByteTimeout: 15 * time.Second}
+	got := o.resolveGRPCWriteByteTimeout()
+	if got != 15*time.Second {
+		t.Errorf("explicit resolveGRPCWriteByteTimeout = %v, want 15s", got)
+	}
+}
+
+// TestResolveGRPCWriteByteTimeoutEnv verifies that the env var is
+// picked up when the explicit option is unset.
+func TestResolveGRPCWriteByteTimeoutEnv(t *testing.T) {
+	t.Setenv("GONACOS_GRPC_WRITE_BYTE_TIMEOUT", "30s")
+	o := options{}
+	got := o.resolveGRPCWriteByteTimeout()
+	if got != 30*time.Second {
+		t.Errorf("env resolveGRPCWriteByteTimeout = %v, want 30s", got)
+	}
+}

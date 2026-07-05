@@ -130,6 +130,20 @@ type options struct {
 	// GONACOS_GRPC_MAX_CONCURRENT_STREAMS env var.
 	GRPCMaxConcurrentStreams int
 
+	// GRPCWriteByteTimeout is the HTTP/2 server-side write timeout:
+	// when data is buffered to write but cannot be flushed within this
+	// duration, the connection is closed. This is the write-side
+	// counterpart to GRPCReadFrameTimeout — ReadFrameTimeout caps the
+	// time spent reading a request frame (closing the slowloris-on-body
+	// window on the request path), while WriteByteTimeout caps the time
+	// spent writing a response frame (closing the symmetric window
+	// where a slow client cannot drain the server's response buffer,
+	// holding a server goroutine + the buffered response bytes
+	// indefinitely). Zero disables (the legacy behavior — relies on
+	// IdleTimeout and TCP write deadlines to eventually fail). Falls
+	// back to GONACOS_GRPC_WRITE_BYTE_TIMEOUT env var.
+	GRPCWriteByteTimeout time.Duration
+
 	// MaxConns caps the total number of concurrent TCP connections the
 	// HTTP and gRPC servers accept. Zero falls back to resolveMaxConns
 	// (10000 default). A negative value disables the cap. When the cap is
@@ -621,6 +635,21 @@ func WithGRPCMaxConcurrentStreams(n int) Option {
 	return func(o *options) { o.GRPCMaxConcurrentStreams = n }
 }
 
+// WithGRPCWriteByteTimeout sets the HTTP/2 server-side write timeout:
+// when data is buffered to write but cannot be flushed within this
+// duration, the connection is closed. This is the write-side
+// counterpart to [WithGRPCReadFrameTimeout] — ReadFrameTimeout caps
+// the time spent reading a request frame, while WriteByteTimeout caps
+// the time spent writing a response frame, closing the symmetric
+// window where a slow client cannot drain the server's response
+// buffer. Zero disables (the legacy behavior). The timeout is
+// per-write-byte, not per-RPC: a streaming RPC that continuously
+// writes is unaffected; only a connection that stalls mid-write is
+// closed. Falls back to the GONACOS_GRPC_WRITE_BYTE_TIMEOUT env var.
+func WithGRPCWriteByteTimeout(d time.Duration) Option {
+	return func(o *options) { o.GRPCWriteByteTimeout = d }
+}
+
 func (o *options) resolveAddr() string {
 	if o.Addr != "" {
 		return o.Addr
@@ -1084,6 +1113,26 @@ func (o *options) resolveGRPCMaxConcurrentStreams() int {
 		}
 	}
 	return 100
+}
+
+// resolveGRPCWriteByteTimeout returns the HTTP/2 server-side write
+// timeout for the gRPC server. Defaults to 0 (disabled — the legacy
+// behavior that relies on IdleTimeout and TCP write deadlines to
+// eventually fail). When set, a connection that cannot flush buffered
+// response bytes within this duration is closed, bounding the
+// stuck-write window where a slow client holds a server goroutine +
+// the buffered response bytes indefinitely. Falls back to
+// GONACOS_GRPC_WRITE_BYTE_TIMEOUT env var.
+func (o *options) resolveGRPCWriteByteTimeout() time.Duration {
+	if o.GRPCWriteByteTimeout != 0 {
+		return o.GRPCWriteByteTimeout
+	}
+	if v := os.Getenv("GONACOS_GRPC_WRITE_BYTE_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d != 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 // resolveMaxConns returns the concurrent-connection cap. Defaults to 10000

@@ -178,6 +178,24 @@ type Server struct {
 	// tightens the per-connection blast radius; legitimate SDK clients
 	// rarely need more than a handful of concurrent streams.
 	MaxConcurrentStreams int
+
+	// WriteByteTimeout is the HTTP/2 server-side write timeout: when
+	// data is buffered to write but cannot be flushed within this
+	// duration, the connection is closed. This is the write-side
+	// counterpart to ReadFrameTimeout — ReadFrameTimeout caps the time
+	// spent reading a request frame (closing the slowloris-on-body
+	// window on the request path), while WriteByteTimeout caps the time
+	// spent writing a response frame (closing the symmetric window
+	// where a slow client cannot drain the server's response buffer,
+	// holding a server goroutine + the buffered response bytes
+	// indefinitely). Zero disables (the legacy behavior — relies on
+	// IdleTimeout and TCP write deadlines to eventually fail). 30s is
+	// a reasonable production default — generous for legitimate clients
+	// (a 4 MiB response at ~133 KB/s) while bounding the stuck-write
+	// window. The timeout is per-write-byte, not per-RPC: a streaming
+	// RPC that continuously writes is unaffected; only a connection
+	// that stalls mid-write is closed.
+	WriteByteTimeout time.Duration
 }
 
 // DefaultReadFrameTimeout is the per-frame read deadline when
@@ -428,6 +446,7 @@ func (s *Server) configureHTTP2(srv *http.Server) {
 	h2s := &http2.Server{
 		IdleTimeout:          srv.IdleTimeout,
 		MaxConcurrentStreams: uint32(s.maxConcurrentStreams()),
+		WriteByteTimeout:     s.WriteByteTimeout,
 	}
 	if s.KeepAlive.ReadIdleTimeout > 0 {
 		h2s.ReadIdleTimeout = s.KeepAlive.ReadIdleTimeout

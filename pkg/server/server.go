@@ -195,6 +195,14 @@ func New(opts ...Option) (*Server, error) {
 	// goroutine + frame-buffer headroom. Defaults to 100 (Go's http2
 	// default); lowering tightens the per-connection blast radius.
 	grpcSrv.MaxConcurrentStreams = o.resolveGRPCMaxConcurrentStreams()
+	// Per-write-byte timeout closes the stuck-write window: a slow
+	// client that cannot drain the server's response buffer would
+	// otherwise hold a server goroutine + the buffered response bytes
+	// indefinitely. Disabled by default (legacy behavior) — enable in
+	// production to bound the write-side goroutine hold. The timeout
+	// is per-write-byte, not per-RPC; a streaming RPC that continuously
+	// writes is unaffected.
+	grpcSrv.WriteByteTimeout = o.resolveGRPCWriteByteTimeout()
 	// Wire the same metrics registry into the gRPC server so
 	// gonacos_grpc_requests_total is exposed under /metrics alongside the
 	// HTTP and process metrics. A single scrape captures everything.

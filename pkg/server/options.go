@@ -42,6 +42,12 @@ type options struct {
 	LoginMaxFailures     int
 	LoginFailWindow      time.Duration
 	LoginLockoutDuration time.Duration
+
+	// Snapshot backup rotation. When > 0, the periodic snapshot save keeps
+	// the prior N dump files as <dumpPath>.1, <dumpPath>.2, ... so a
+	// corrupted or accidentally-erased latest snapshot can be recovered
+	// from the previous one. Zero (default) disables rotation.
+	SnapshotBackupCount int
 }
 
 // Option configures a Server at construction time. Pass to [New].
@@ -183,6 +189,15 @@ func WithLoginThrottle(maxFailures int, failWindow, lockoutDuration time.Duratio
 		o.LoginFailWindow = failWindow
 		o.LoginLockoutDuration = lockoutDuration
 	}
+}
+
+// WithSnapshotBackupCount configures the snapshot dump file to retain the
+// prior N snapshots as <dumpPath>.1, <dumpPath>.2, ... so a corrupted latest
+// snapshot can be recovered from the previous one. Only meaningful in
+// standalone mode (embedded Redis with disk dump). Recommended production
+// value: 5. Zero (default) disables rotation.
+func WithSnapshotBackupCount(n int) Option {
+	return func(o *options) { o.SnapshotBackupCount = n }
 }
 
 func (o *options) resolveAddr() string {

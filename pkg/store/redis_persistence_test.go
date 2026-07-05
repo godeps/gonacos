@@ -2,7 +2,10 @@ package store
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -139,5 +142,76 @@ func TestRedisPersistence_PeriodicSave(t *testing.T) {
 	}
 	if err != nil {
 		t.Fatalf("get: %v", err)
+	}
+}
+
+// TestRedisPersistence_RotateDumpFile verifies that Save with backupCount > 0
+// keeps the prior N snapshots as <dumpPath>.1, <dumpPath>.2, ... and drops
+// anything older.
+func TestRedisPersistence_RotateDumpFile(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	dumpPath := filepath.Join(dir, "snapshot.json")
+	p, fake, _, cleanup := newTestPersistence(t, dumpPath)
+	defer cleanup()
+	p.SetBackupCount(3)
+
+	for i := 1; i <= 5; i++ {
+		fake.data = map[string]string{"gen": string(rune('0' + i))}
+		if err := p.Save(context.Background()); err != nil {
+			t.Fatalf("save %d: %v", i, err)
+		}
+	}
+
+	// With backupCount=3, we expect the current file plus .1, .2, .3.
+	// .4 and .5 should have been dropped.
+	for _, suffix := range []string{"", ".1", ".2", ".3"} {
+		path := dumpPath + suffix
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s to exist: %v", path, err)
+		}
+	}
+	for _, suffix := range []string{".4", ".5"} {
+		path := dumpPath + suffix
+		if _, err := os.Stat(path); err == nil {
+			t.Errorf("expected %s to be dropped, but it exists", path)
+		}
+	}
+}
+
+// TestRedisPersistence_AtomicWriteNoCorruptionOnPartialWrite is a smoke test
+// that the atomic-write path produces a single valid JSON file. A full
+// crash-mid-write test would require a fault-injecting filesystem; the
+// rename-based implementation makes that scenario impossible by construction.
+func TestRedisPersistence_AtomicWriteNoCorruptionOnPartialWrite(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	dumpPath := filepath.Join(dir, "snapshot.json")
+	p, fake, _, cleanup := newTestPersistence(t, dumpPath)
+	defer cleanup()
+
+	fake.data = map[string]string{"k": "v"}
+	if err := p.Save(context.Background()); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	// The dump file must be valid JSON (no temp files left behind).
+	data, err := os.ReadFile(dumpPath)
+	if err != nil {
+		t.Fatalf("read dump: %v", err)
+	}
+	if !json.Valid(data) {
+		t.Fatalf("dump file is not valid JSON")
+	}
+
+	// No leftover temp files in the directory.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "snapshot.json.tmp-") {
+			t.Errorf("leftover temp file: %s", e.Name())
+		}
 	}
 }

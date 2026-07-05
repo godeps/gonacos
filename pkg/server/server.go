@@ -86,6 +86,7 @@ func New(opts ...Option) (*Server, error) {
 	}
 
 	persist := store.NewRedisPersistence(redisClient, coord, dumpPath)
+	persist.SetBackupCount(o.SnapshotBackupCount)
 	if err := persist.Load(context.Background()); err != nil {
 		if o.resolveStrictSnapshot() {
 			_ = redisClient.Close()

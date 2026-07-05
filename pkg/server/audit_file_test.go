@@ -44,7 +44,7 @@ func TestResolveAuditLogFileEnvFallback(t *testing.T) {
 // TestBuildAuditLoggerLoggerOnly verifies that an empty path returns a
 // non-nil audit logger without attempting to open a file.
 func TestBuildAuditLoggerLoggerOnly(t *testing.T) {
-	got := buildAuditLogger(nil, "")
+	got := buildAuditLogger(nil, "", 0, 0)
 	if got == nil {
 		t.Fatal("buildAuditLogger returned nil")
 	}
@@ -54,7 +54,7 @@ func TestBuildAuditLoggerLoggerOnly(t *testing.T) {
 // non-nil audit logger and creates the named file.
 func TestBuildAuditLoggerWithFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "audit.log")
-	got := buildAuditLogger(nil, path)
+	got := buildAuditLogger(nil, path, 0, 0)
 	if got == nil {
 		t.Fatal("buildAuditLogger returned nil")
 	}
@@ -69,7 +69,7 @@ func TestBuildAuditLoggerWithFile(t *testing.T) {
 func TestBuildAuditLoggerBadPathReturnsLogger(t *testing.T) {
 	// A path under a non-directory cannot be created.
 	path := "/dev/null/cannot-create/audit.log"
-	got := buildAuditLogger(nil, path)
+	got := buildAuditLogger(nil, path, 0, 0)
 	if got == nil {
 		t.Fatal("buildAuditLogger returned nil for bad path")
 	}

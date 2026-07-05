@@ -90,7 +90,7 @@ func New(opts ...Option) (*Server, error) {
 	// configured, events also go to that file as JSON-lines for
 	// compliance archival and SIEM forwarding. A nil logger disables
 	// auditing (matching noopAuditLogger behavior).
-	bundle.AuditLogger = buildAuditLogger(logger, o.resolveAuditLogFile())
+	bundle.AuditLogger = buildAuditLogger(logger, o.resolveAuditLogFile(), o.resolveAuditLogMaxBytes(), o.resolveAuditLogMaxBackups())
 	coord := store.NewCoordinator()
 	coord.Register(bundle.Namespace)
 	coord.Register(bundle.Config)
@@ -528,18 +528,29 @@ func (s *Server) Services() *app.ServiceBundle { return s.bundle }
 // the file cannot be opened, the server logs a warning and continues with
 // logger-only audit so events are not lost.
 //
+// When maxBytes > 0, the file logger auto-rotates when it reaches that
+// size, keeping maxBackups rotated copies. This is the safety net for
+// deployments where logrotate(8) is not configured. When maxBytes is 0,
+// rotation is SIGHUP-only (operator must configure logrotate).
+//
 // The assembled logger is wrapped with [app.WrapWithMetrics] so every
 // event increments gonacos_audit_events_total{action,result} — the
 // alerting signal for "audit event rate spiked" (brute-force login,
 // permission scan). The wrapper is a no-op when AuditMetricsRegistry
 // is nil (registry not yet wired at first call, or embedder that
 // opted out of observability).
-func buildAuditLogger(logger Logger, path string) app.AuditLogger {
+func buildAuditLogger(logger Logger, path string, maxBytes int64, maxBackups int) app.AuditLogger {
 	loggerAudit := app.NewLoggerAuditLogger(logger)
 	if path == "" {
 		return app.WrapWithMetrics(loggerAudit)
 	}
-	fileAudit, err := app.NewFileAuditLogger(path)
+	var fileAudit app.AuditLogger
+	var err error
+	if maxBytes > 0 {
+		fileAudit, err = app.NewFileAuditLoggerWithRotation(path, maxBytes, maxBackups)
+	} else {
+		fileAudit, err = app.NewFileAuditLogger(path)
+	}
 	if err != nil {
 		if logger != nil {
 			logger.Infof("audit: file logger disabled for path %q: %v", path, err)

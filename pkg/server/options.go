@@ -147,10 +147,29 @@ type options struct {
 
 	// AuditLogFile, when non-empty, writes JSON-lines audit events to the
 	// named file in addition to the application logger. Events are appended
-	// one per line; the parent directory is created if missing. Rotation
-	// is the operator's responsibility (logrotate(8) with copytruncate).
-	// When empty (default), audit events go only to the application logger.
+	// one per line; the parent directory is created if missing. When
+	// AuditLogMaxBytes > 0, the file is auto-rotated when it reaches that
+	// size, keeping AuditLogMaxBackups copies. When AuditLogMaxBytes is 0,
+	// rotation is the operator's responsibility (logrotate(8) with
+	// copytruncate, or SIGHUP-based). When empty (default), audit events
+	// go only to the application logger.
 	AuditLogFile string
+
+	// AuditLogMaxBytes is the file size in bytes that triggers automatic
+	// rotation of the audit log. When the current file reaches this size,
+	// it is closed, renamed to .1 (shifting existing backups down), and a
+	// fresh file is opened. This is the safety net for deployments where
+	// logrotate(8) is not configured — without it, a high-volume audit
+	// stream can fill the disk in hours. Zero (default) disables
+	// size-based rotation; SIGHUP + logrotate(8) is still honored.
+	AuditLogMaxBytes int64
+
+	// AuditLogMaxBackups is the number of rotated backup files to keep
+	// when AuditLogMaxBytes > 0. The chain is audit.log (current) →
+	// audit.log.1 (most recent) → ... → audit.log.<N> (oldest). When
+	// the chain is full, the oldest is deleted before the next
+	// rotation. Defaults to 5 when zero and AuditLogMaxBytes > 0.
+	AuditLogMaxBackups int
 
 	// CORS configures cross-origin resource sharing for the HTTP API. The
 	// middleware is a no-op when CORSConfig.Enabled is false (the default).
@@ -493,6 +512,26 @@ func WithMetricsToken(token string) Option {
 // GONACOS_AUDIT_LOG_FILE env var.
 func WithAuditLogFile(path string) Option {
 	return func(o *options) { o.AuditLogFile = path }
+}
+
+// WithAuditLogMaxBytes sets the file size that triggers automatic
+// rotation of the audit log. When the current file reaches this many
+// bytes, it is rotated (renamed to .1, shifting existing backups down)
+// and a fresh file is opened. Zero (default) disables size-based
+// rotation; the operator must rely on SIGHUP + logrotate(8). Falls
+// back to the GONACOS_AUDIT_LOG_MAX_BYTES env var.
+func WithAuditLogMaxBytes(maxBytes int64) Option {
+	return func(o *options) { o.AuditLogMaxBytes = maxBytes }
+}
+
+// WithAuditLogMaxBackups sets the number of rotated backup files to
+// keep when AuditLogMaxBytes > 0. The chain is path (current) →
+// path.1 → ... → path.<N>. When the chain is full, the oldest is
+// deleted before the next rotation. Defaults to 5 when zero and
+// AuditLogMaxBytes > 0. Falls back to the
+// GONACOS_AUDIT_LOG_MAX_BACKUPS env var.
+func WithAuditLogMaxBackups(n int) Option {
+	return func(o *options) { o.AuditLogMaxBackups = n }
 }
 
 // WithCORS enables cross-origin resource sharing for the HTTP API. Pass a
@@ -1044,6 +1083,40 @@ func (o *options) resolveAuditLogFile() string {
 		return o.AuditLogFile
 	}
 	return os.Getenv("GONACOS_AUDIT_LOG_FILE")
+}
+
+// resolveAuditLogMaxBytes returns the file size that triggers automatic
+// rotation. Returns the explicitly configured value when > 0, otherwise
+// the GONACOS_AUDIT_LOG_MAX_BYTES env var (parsed as bytes), otherwise 0
+// (size-based rotation disabled; SIGHUP + logrotate(8) is still honored).
+func (o *options) resolveAuditLogMaxBytes() int64 {
+	if o.AuditLogMaxBytes > 0 {
+		return o.AuditLogMaxBytes
+	}
+	if v := os.Getenv("GONACOS_AUDIT_LOG_MAX_BYTES"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+// resolveAuditLogMaxBackups returns the number of rotated backup files
+// to keep. Returns the explicitly configured value when > 0, otherwise
+// the GONACOS_AUDIT_LOG_MAX_BACKUPS env var, otherwise 5 (the default
+// when size-based rotation is enabled).
+func (o *options) resolveAuditLogMaxBackups() int {
+	if o.AuditLogMaxBackups > 0 {
+		return o.AuditLogMaxBackups
+	}
+	if v := os.Getenv("GONACOS_AUDIT_LOG_MAX_BACKUPS"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err == nil && n > 0 {
+			return n
+		}
+	}
+	return 5
 }
 
 // resolveTrustedProxies returns the list of CIDR ranges whose

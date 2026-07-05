@@ -2,6 +2,7 @@ package app
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,5 +175,128 @@ func TestMultiAuditLoggerAllNilReturnsNoop(t *testing.T) {
 	multi := NewMultiAuditLogger(nil, nil)
 	if _, ok := multi.(noopAuditLogger); !ok {
 		t.Error("expected noopAuditLogger for all-nil input")
+	}
+}
+
+// TestFileAuditLoggerRotatesOnMaxBytes verifies that the file audit
+// logger auto-rotates when the current file reaches MaxBytes. After
+// rotation, the original file should be renamed to .1 and a fresh file
+// should be opened at the original path. This is the safety net for
+// deployments where logrotate(8) is not configured — without it, a
+// high-volume audit stream can fill the disk in hours.
+func TestFileAuditLoggerRotatesOnMaxBytes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.log")
+	// maxBytes=1 — any single event (~100+ bytes) triggers rotation
+	// immediately. Small value keeps the test fast and deterministic.
+	logger, err := NewFileAuditLoggerWithRotation(path, 1, 3)
+	if err != nil {
+		t.Fatalf("NewFileAuditLoggerWithRotation: %v", err)
+	}
+
+	event := AuditEvent{
+		Timestamp: time.Now().UTC(),
+		Action:    AuditActionLogin,
+		User:      "alice",
+		IP:        "10.0.0.1",
+		Result:    AuditResultSuccess,
+	}
+	// Write 3 events — each triggers a rotation.
+	for i := 0; i < 3; i++ {
+		logger.Log(event)
+	}
+
+	// After 3 rotations, audit.log.1, .2, .3 should all exist.
+	// (maxBackups=3 keeps all three; a 4th rotation would delete .3.)
+	for n := 1; n <= 3; n++ {
+		backup := fmt.Sprintf("%s.%d", path, n)
+		if _, err := os.Stat(backup); err != nil {
+			t.Errorf("expected backup file %s to exist: %v", backup, err)
+		}
+	}
+	// The current file should exist (fresh file opened after last rotation).
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("current audit file should exist after rotation: %v", err)
+	}
+	// The oldest slot beyond maxBackups should not exist.
+	if _, err := os.Stat(path + ".4"); err == nil {
+		t.Errorf("backup .4 should not exist (maxBackups=3)")
+	}
+}
+
+// TestFileAuditLoggerRespectsMaxBackups verifies that the file audit
+// logger keeps at most maxBackups rotated copies. When the chain is
+// full, the oldest backup is deleted before the next rotation. This
+// bounds disk usage to (maxBackups+1) * maxBytes in the worst case.
+func TestFileAuditLoggerRespectsMaxBackups(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.log")
+	maxBackups := 3
+	logger, err := NewFileAuditLoggerWithRotation(path, 50, maxBackups)
+	if err != nil {
+		t.Fatalf("NewFileAuditLoggerWithRotation: %v", err)
+	}
+
+	event := AuditEvent{
+		Timestamp: time.Now().UTC(),
+		Action:    AuditActionLogin,
+		User:      "alice",
+		IP:        "10.0.0.1",
+		Result:    AuditResultSuccess,
+	}
+	// Write enough events to trigger many rotations (more than
+	// maxBackups).
+	for i := 0; i < 20; i++ {
+		logger.Log(event)
+	}
+
+	// Count backup files (.1, .2, .3, ...).
+	count := 0
+	for n := 1; n <= maxBackups+5; n++ {
+		backup := fmt.Sprintf("%s.%d", path, n)
+		if _, err := os.Stat(backup); err == nil {
+			count++
+		}
+	}
+	if count > maxBackups {
+		t.Errorf("got %d backup files, want at most %d", count, maxBackups)
+	}
+	// The oldest backup beyond maxBackups should not exist.
+	oldest := fmt.Sprintf("%s.%d", path, maxBackups+1)
+	if _, err := os.Stat(oldest); err == nil {
+		t.Errorf("oldest backup %s should have been deleted", oldest)
+	}
+}
+
+// TestFileAuditLoggerNoRotationWhenMaxBytesZero verifies that
+// maxBytes=0 disables size-based rotation — the file grows without
+// bound (the SIGHUP+logrotate path handles rotation externally). This
+// is the backward-compatible default.
+func TestFileAuditLoggerNoRotationWhenMaxBytesZero(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "audit.log")
+	// maxBytes=0: no size-based rotation.
+	logger, err := NewFileAuditLoggerWithRotation(path, 0, 5)
+	if err != nil {
+		t.Fatalf("NewFileAuditLoggerWithRotation: %v", err)
+	}
+
+	event := AuditEvent{
+		Timestamp: time.Now().UTC(),
+		Action:    AuditActionLogin,
+		User:      "alice",
+		IP:        "10.0.0.1",
+		Result:    AuditResultSuccess,
+	}
+	for i := 0; i < 50; i++ {
+		logger.Log(event)
+	}
+
+	// No backup files should exist.
+	for n := 1; n <= 6; n++ {
+		backup := fmt.Sprintf("%s.%d", path, n)
+		if _, err := os.Stat(backup); err == nil {
+			t.Errorf("backup file %s should not exist (rotation disabled)", backup)
+		}
 	}
 }

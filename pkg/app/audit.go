@@ -142,6 +142,25 @@ type fileAuditLogger struct {
 	// events. Nil when no registry is wired (tests, embedders that
 	// opted out of observability) — the stderr fallback still fires.
 	metrics *observability.Registry
+	// maxBytes is the file size threshold that triggers automatic
+	// rotation. When written bytes reach this threshold, the current
+	// file is closed, renamed to .1 (shifting existing backups down),
+	// and a fresh file is opened. Zero disables size-based rotation;
+	// the operator must rely on SIGHUP + logrotate(8) alone. Size-
+	// based rotation is the safety net for deployments where
+	// logrotate is not configured — without it, a high-volume audit
+	// stream can fill the disk in hours.
+	maxBytes int64
+	// maxBackups is the number of rotated backup files to keep.
+	// When maxBackups=5, the chain is audit.log (current) →
+	// audit.log.1 (most recent) → ... → audit.log.5 (oldest).
+	// When the chain is full, the oldest backup is deleted before
+	// the new rotation. Zero keeps a single backup (path.1).
+	maxBackups int
+	// written tracks bytes written to the current file since the
+	// last rotation (or since open). Maintained incrementally to
+	// avoid a per-write stat syscall. Reset to 0 on rotate/reopen.
+	written int64
 }
 
 // SetMetricsRegistry wires the registry that fileAuditLogger uses to
@@ -184,6 +203,28 @@ func (l *fileAuditLogger) recordFailure(reason string) {
 // Returns an error if the file cannot be opened; callers should fall back
 // to a logger-based audit logger in that case.
 func NewFileAuditLogger(path string) (AuditLogger, error) {
+	return newFileAuditLogger(path, 0, 0)
+}
+
+// NewFileAuditLoggerWithRotation opens (or creates) the audit log file at
+// path and returns an AuditLogger that automatically rotates when the
+// file reaches maxBytes, keeping maxBackups rotated copies. Set maxBytes
+// to 0 to disable size-based rotation (SIGHUP-only, like NewFileAuditLogger).
+//
+// Rotation naming: path (current) → path.1 (most recent backup) →
+// path.2 → ... → path.<maxBackups> (oldest). When the chain is full and
+// a new rotation fires, path.<maxBackups> is deleted before the shift.
+// maxBackups <= 0 is treated as 1 (keep a single backup).
+//
+// The rotation is atomic from the caller's perspective: it runs under
+// the same mutex as Log, so an in-flight write completes before the fd
+// is swapped. Events written during rotation are not lost — they land
+// in the new file after rotation completes.
+func NewFileAuditLoggerWithRotation(path string, maxBytes int64, maxBackups int) (AuditLogger, error) {
+	return newFileAuditLogger(path, maxBytes, maxBackups)
+}
+
+func newFileAuditLogger(path string, maxBytes int64, maxBackups int) (AuditLogger, error) {
 	if path == "" {
 		return nil, errAuditPathEmpty
 	}
@@ -196,7 +237,20 @@ func NewFileAuditLogger(path string) (AuditLogger, error) {
 	if err != nil {
 		return nil, err
 	}
-	fl := &fileAuditLogger{path: path, f: f}
+	// Initialize written from the current file size so a pre-existing
+	// audit log doesn't skip rotation on the first write. Stat is cheap
+	// (one syscall at open time, not per-write).
+	var size int64
+	if info, err := f.Stat(); err == nil {
+		size = info.Size()
+	}
+	fl := &fileAuditLogger{
+		path:       path,
+		f:          f,
+		maxBytes:   maxBytes,
+		maxBackups: maxBackups,
+		written:    size,
+	}
 	// Pick up the package-level registry when set so fileAuditLogger
 	// counts write failures without forcing every caller to wire
 	// SetMetricsRegistry separately. The registry is set by
@@ -228,6 +282,13 @@ func (l *fileAuditLogger) Log(e AuditEvent) {
 			return
 		}
 		l.f = f
+		// Reset written from the reopened file's size — a previous
+		// failure may have left the file with partial content.
+		if info, err := f.Stat(); err == nil {
+			l.written = info.Size()
+		} else {
+			l.written = 0
+		}
 	}
 	line, err := json.Marshal(e)
 	if err != nil {
@@ -241,7 +302,85 @@ func (l *fileAuditLogger) Log(e AuditEvent) {
 		fmt.Fprintf(os.Stderr, "audit: write %s failed: %v\n", l.path, err)
 		_ = l.f.Close()
 		l.f = nil
+		return
 	}
+	l.written += int64(len(line))
+	// Size-based rotation: when the current file reaches maxBytes,
+	// rotate before the next event lands. This is the safety net for
+	// deployments where logrotate(8) is not configured — without it,
+	// a high-volume audit stream can fill the disk. Rotation runs
+	// under the same mutex as the write, so no events are lost.
+	if l.maxBytes > 0 && l.written >= l.maxBytes {
+		if err := l.rotateLocked(); err != nil {
+			// Rotation failed — record the metric but don't drop
+			// the event we just wrote. The file stays open and
+			// events keep accumulating; the next write will retry
+			// rotation when written >= maxBytes (which is still
+			// true since we didn't reset written).
+			l.recordFailure("rotate")
+			fmt.Fprintf(os.Stderr, "audit: rotate %s failed: %v\n", l.path, err)
+		}
+	}
+}
+
+// rotateLocked performs the size-based file rotation. Caller MUST hold
+// l.mu. The chain is: path (current) → path.1 → path.2 → ... →
+// path.<maxBackups>. The oldest backup (path.<maxBackups>) is deleted,
+// then each path.<N> is renamed to path.<N+1> (from high to low to
+// avoid clobbering), and finally the current path is renamed to
+// path.1. A fresh file is then opened at path and written is reset.
+//
+// Failures mid-rotation (e.g., a rename fails due to cross-device link)
+// leave the chain in a partial state but the logger is not broken: the
+// new file is opened at path and events continue. The error is
+// returned so Log can record the metric.
+func (l *fileAuditLogger) rotateLocked() error {
+	if l.f != nil {
+		_ = l.f.Close()
+		l.f = nil
+	}
+	backups := l.maxBackups
+	if backups < 1 {
+		backups = 1
+	}
+	// Delete the oldest backup if it exists.
+	oldest := fmt.Sprintf("%s.%d", l.path, backups)
+	if _, err := os.Stat(oldest); err == nil {
+		if err := os.Remove(oldest); err != nil {
+			// Can't remove oldest — abort rotation to avoid
+			// clobbering the chain. The file will be reopened
+			// at path and events continue.
+			return fmt.Errorf("remove oldest backup %s: %w", oldest, err)
+		}
+	}
+	// Shift backups down: path.<N> → path.<N+1> for N from
+	// backups-1 down to 1. We go high-to-low so we don't clobber
+	// path.<N+1> before moving it to path.<N+2>.
+	for n := backups - 1; n >= 1; n-- {
+		src := fmt.Sprintf("%s.%d", l.path, n)
+		dst := fmt.Sprintf("%s.%d", l.path, n+1)
+		if _, err := os.Stat(src); err != nil {
+			continue // backup doesn't exist yet
+		}
+		if err := os.Rename(src, dst); err != nil {
+			return fmt.Errorf("rename %s → %s: %w", src, dst, err)
+		}
+	}
+	// Rename current file to .1.
+	if _, err := os.Stat(l.path); err == nil {
+		dst := fmt.Sprintf("%s.1", l.path)
+		if err := os.Rename(l.path, dst); err != nil {
+			return fmt.Errorf("rename %s → %s: %w", l.path, dst, err)
+		}
+	}
+	// Open fresh file at path.
+	f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("audit: reopen %s after rotate: %w", l.path, err)
+	}
+	l.f = f
+	l.written = 0
+	return nil
 }
 
 // Reopen closes the current file handle and opens a fresh one at the
@@ -270,6 +409,13 @@ func (l *fileAuditLogger) Reopen() error {
 		return fmt.Errorf("audit: reopen %s: %w", l.path, err)
 	}
 	l.f = f
+	// Reset written from the reopened file's size — logrotate(8) with
+	// copytruncate may have left the file with partial content.
+	if info, err := f.Stat(); err == nil {
+		l.written = info.Size()
+	} else {
+		l.written = 0
+	}
 	return nil
 }
 

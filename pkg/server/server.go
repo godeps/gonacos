@@ -342,7 +342,7 @@ func New(opts ...Option) (*Server, error) {
 		tlsConfig:     tlsCfg,
 		stopPeriodic:  stopPeriodic,
 		stopRateGC:    stopRateGC,
-		stopResource:  startResourceCollector(registry, bundle, push, httpLn, grpcLn, 30*time.Second),
+		stopResource:  startResourceCollector(registry, bundle, push, httpLn, grpcLn, redisClient, 30*time.Second),
 	}, nil
 }
 

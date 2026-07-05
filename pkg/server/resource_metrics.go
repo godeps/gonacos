@@ -7,7 +7,17 @@ import (
 
 	"github.com/godeps/gonacos/pkg/app"
 	"github.com/godeps/gonacos/pkg/observability"
+	"github.com/redis/go-redis/v9"
 )
+
+// poolStatsProvider abstracts the subset of *redis.Client used by the
+// resource collector to sample connection-pool stats. Defined as an
+// interface so the collector can be tested with a stub instead of a
+// real Redis client — and so pkg/server doesn't grow new compile-time
+// coupling to redis beyond what [New] already has.
+type poolStatsProvider interface {
+	PoolStats() *redis.PoolStats
+}
 
 // startResourceCollector registers resource-count gauges and launches a
 // background goroutine that refreshes them on the given interval. Returns a
@@ -30,11 +40,20 @@ import (
 //	                                    the metric should set a high cap
 //	                                    (e.g., 100000) to track without
 //	                                    effectively limiting.
+//	gonacos_redis_pool_connections{state} — Redis connection pool state
+//	                                    (state="total|idle|stale"); sampled
+//	                                    from redis.Client.PoolStats so the
+//	                                    values reflect the live pool, not a
+//	                                    snapshot at startup.
+//	gonacos_redis_pool_hits_total     — counter, pool hits since process start
+//	gonacos_redis_pool_misses_total   — counter, pool misses (pool empty)
+//	gonacos_redis_pool_timeouts_total — counter, pool wait timeouts (pool
+//	                                    saturated and PoolTimeout exceeded)
 //
 // The collector is a no-op when registry or bundle is nil. Sampling is O(n)
 // on the in-memory store (bounded by the namespace quota), so at a 30s
 // default interval the overhead is negligible against the request hot path.
-func startResourceCollector(registry *observability.Registry, bundle *app.ServiceBundle, push *app.PushService, httpLn, grpcLn net.Listener, interval time.Duration) func() {
+func startResourceCollector(registry *observability.Registry, bundle *app.ServiceBundle, push *app.PushService, httpLn, grpcLn net.Listener, redisClient poolStatsProvider, interval time.Duration) func() {
 	if registry == nil || bundle == nil {
 		return func() {}
 	}
@@ -47,6 +66,9 @@ func startResourceCollector(registry *observability.Registry, bundle *app.Servic
 		connections *observability.Gauge
 		httpConns   *observability.Gauge
 		grpcConns   *observability.Gauge
+		poolTotal   *observability.Gauge
+		poolIdle    *observability.Gauge
+		poolStale   *observability.Gauge
 	}{
 		namespaces:  registry.Gauge("gonacos_namespaces_total", nil),
 		configs:     registry.Gauge("gonacos_configs_total", nil),
@@ -56,7 +78,20 @@ func startResourceCollector(registry *observability.Registry, bundle *app.Servic
 		connections: registry.Gauge("gonacos_grpc_connections", nil),
 		httpConns:   registry.Gauge("gonacos_active_connections", map[string]string{"proto": "http"}),
 		grpcConns:   registry.Gauge("gonacos_active_connections", map[string]string{"proto": "grpc"}),
+		poolTotal:   registry.Gauge("gonacos_redis_pool_connections", map[string]string{"state": "total"}),
+		poolIdle:    registry.Gauge("gonacos_redis_pool_connections", map[string]string{"state": "idle"}),
+		poolStale:   registry.Gauge("gonacos_redis_pool_connections", map[string]string{"state": "stale"}),
 	}
+	// Pool hit/miss/timeout counters are cumulative since process start
+	// (PoolStats returns uint32 totals, not deltas). Modeled as gauges
+	// with the _total suffix so Prometheus scrapers see the cumulative
+	// value as-is — Counter.Set would require extending the public API
+	// or tracking per-period deltas, and the absolute value is what
+	// PoolStats already gives us. The _total convention in the name is
+	// a hint to scrapers that the value is monotonic.
+	poolHits := registry.Gauge("gonacos_redis_pool_hits_total", nil)
+	poolMisses := registry.Gauge("gonacos_redis_pool_misses_total", nil)
+	poolTimeouts := registry.Gauge("gonacos_redis_pool_timeouts_total", nil)
 
 	refresh := func() {
 		namespaces := bundle.Namespace.List()
@@ -103,6 +138,23 @@ func startResourceCollector(registry *observability.Registry, bundle *app.Servic
 		}
 		if ml, ok := grpcLn.(*maxConnsListener); ok {
 			gauges.grpcConns.Set(int64(ml.CurrentConns()))
+		}
+
+		// Redis connection pool state. PoolStats returns cumulative
+		// counters since process start, so .Set on the counter is the
+		// right call (not .Inc — the value is absolute, not a delta).
+		// Nil redisClient (tests, embedders that don't wire Redis) skips
+		// the sample; the gauges stay at 0.
+		if redisClient != nil {
+			stats := redisClient.PoolStats()
+			if stats != nil {
+				gauges.poolTotal.Set(int64(stats.TotalConns))
+				gauges.poolIdle.Set(int64(stats.IdleConns))
+				gauges.poolStale.Set(int64(stats.StaleConns))
+				poolHits.Set(int64(stats.Hits))
+				poolMisses.Set(int64(stats.Misses))
+				poolTimeouts.Set(int64(stats.Timeouts))
+			}
 		}
 	}
 

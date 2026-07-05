@@ -19,7 +19,7 @@ func TestResourceCollectorExposesGauges(t *testing.T) {
 
 	// Pass nil listeners — the connection gauges default to 0 when no
 	// maxConnsListener is wired. The other gauges must still register.
-	stop := startResourceCollector(registry, bundle, nil, nil, nil, 0) // 0 = no background ticker
+	stop := startResourceCollector(registry, bundle, nil, nil, nil, nil, 0) // 0 = no background ticker
 	defer stop()
 
 	var buf strings.Builder
@@ -44,11 +44,11 @@ func TestResourceCollectorExposesGauges(t *testing.T) {
 // TestResourceCollectorNilSafe verifies that nil registry or nil bundle
 // doesn't panic and returns a callable no-op stop function.
 func TestResourceCollectorNilSafe(t *testing.T) {
-	stop1 := startResourceCollector(nil, nil, nil, nil, nil, time.Second)
+	stop1 := startResourceCollector(nil, nil, nil, nil, nil, nil, time.Second)
 	stop1() // must not panic
 
 	registry := observability.NewRegistry()
-	stop2 := startResourceCollector(registry, nil, nil, nil, nil, time.Second)
+	stop2 := startResourceCollector(registry, nil, nil, nil, nil, nil, time.Second)
 	stop2() // must not panic
 }
 
@@ -79,7 +79,7 @@ func TestResourceCollectorReportsActiveConnections(t *testing.T) {
 	httpLn := newMaxConnsListener(rawHTTP, 100)
 	grpcLn := newMaxConnsListener(rawGRPC, 100)
 
-	stop := startResourceCollector(registry, bundle, nil, httpLn, grpcLn, 0)
+	stop := startResourceCollector(registry, bundle, nil, httpLn, grpcLn, nil, 0)
 	defer stop()
 
 	// Open 3 HTTP connections and 2 gRPC connections, then refresh the
@@ -148,7 +148,7 @@ func TestResourceCollectorReportsActiveConnections(t *testing.T) {
 	// connections. The first call (inside startResourceCollector) ran
 	// before we opened connections, so its reading was 0.
 	stop()
-	stop = startResourceCollector(registry, bundle, nil, httpLn, grpcLn, 0)
+	stop = startResourceCollector(registry, bundle, nil, httpLn, grpcLn, nil, 0)
 	defer stop()
 
 	httpGauge := registry.Gauge("gonacos_active_connections",
@@ -177,7 +177,7 @@ func TestResourceCollectorRawListenersNoOpForConnections(t *testing.T) {
 	}
 	defer rawHTTP.Close()
 
-	stop := startResourceCollector(registry, bundle, nil, rawHTTP, nil, 0)
+	stop := startResourceCollector(registry, bundle, nil, rawHTTP, nil, nil, 0)
 	defer stop()
 
 	httpGauge := registry.Gauge("gonacos_active_connections",

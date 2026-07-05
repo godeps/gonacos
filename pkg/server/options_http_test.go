@@ -19,6 +19,9 @@ func TestResolveHTTPHardeningDefaults(t *testing.T) {
 	if got := o.resolveHTTPMaxBody(); got != 10*1024*1024 {
 		t.Errorf("default resolveHTTPMaxBody = %d, want %d", got, 10*1024*1024)
 	}
+	if got := o.resolveHTTPMaxHeaderBytes(); got != 1<<20 {
+		t.Errorf("default resolveHTTPMaxHeaderBytes = %d, want %d (1 MiB)", got, 1<<20)
+	}
 	if got := o.resolveHTTPWriteTimeout(); got != 30*time.Second {
 		t.Errorf("default resolveHTTPWriteTimeout = %v, want 30s", got)
 	}
@@ -39,12 +42,13 @@ func TestResolveHTTPHardeningDefaults(t *testing.T) {
 // the defaults, including negative values that disable a cap.
 func TestResolveHTTPHardeningConfigured(t *testing.T) {
 	o := options{
-		HTTPRateRPS:      50,
-		HTTPRateBurst:    100,
-		HTTPMaxBodyBytes: 2048,
-		HTTPWriteTimeout: 10 * time.Second,
-		HTTPIdleTimeout:  60 * time.Second,
-		HTTPReadTimeout:  45 * time.Second,
+		HTTPRateRPS:        50,
+		HTTPRateBurst:      100,
+		HTTPMaxBodyBytes:   2048,
+		HTTPMaxHeaderBytes: 64 * 1024,
+		HTTPWriteTimeout:   10 * time.Second,
+		HTTPIdleTimeout:    60 * time.Second,
+		HTTPReadTimeout:    45 * time.Second,
 	}
 	if got := o.resolveHTTPRateRPS(); got != 50 {
 		t.Errorf("resolveHTTPRateRPS = %v, want 50", got)
@@ -61,6 +65,9 @@ func TestResolveHTTPHardeningConfigured(t *testing.T) {
 
 	if got := o.resolveHTTPMaxBody(); got != 2048 {
 		t.Errorf("resolveHTTPMaxBody = %d, want 2048", got)
+	}
+	if got := o.resolveHTTPMaxHeaderBytes(); got != 64*1024 {
+		t.Errorf("resolveHTTPMaxHeaderBytes = %d, want %d", got, 64*1024)
 	}
 	if got := o.resolveHTTPWriteTimeout(); got != 10*time.Second {
 		t.Errorf("resolveHTTPWriteTimeout = %v, want 10s", got)
@@ -89,6 +96,12 @@ func TestResolveHTTPHardeningConfigured(t *testing.T) {
 	if got := o.resolveHTTPReadTimeout(); got != -1 {
 		t.Errorf("resolveHTTPReadTimeout (disabled) = %v, want -1", got)
 	}
+
+	// Negative max-header disables the cap.
+	o.HTTPMaxHeaderBytes = -1
+	if got := o.resolveHTTPMaxHeaderBytes(); got != -1 {
+		t.Errorf("resolveHTTPMaxHeaderBytes (disabled) = %d, want -1", got)
+	}
 }
 
 // TestResolveHTTPHardeningEnv verifies that env vars are picked up when the
@@ -96,6 +109,7 @@ func TestResolveHTTPHardeningConfigured(t *testing.T) {
 func TestResolveHTTPHardeningEnv(t *testing.T) {
 	t.Setenv("GONACOS_HTTP_RATE_RPS", "75")
 	t.Setenv("GONACOS_HTTP_MAX_BODY", "5242880")
+	t.Setenv("GONACOS_HTTP_MAX_HEADER_BYTES", "262144")
 	t.Setenv("GONACOS_HTTP_WRITE_TIMEOUT", "45s")
 	t.Setenv("GONACOS_HTTP_IDLE_TIMEOUT", "90s")
 	t.Setenv("GONACOS_HTTP_READ_TIMEOUT", "60s")
@@ -109,6 +123,9 @@ func TestResolveHTTPHardeningEnv(t *testing.T) {
 	}
 	if got := o.resolveHTTPMaxBody(); got != 5242880 {
 		t.Errorf("env resolveHTTPMaxBody = %d, want 5242880", got)
+	}
+	if got := o.resolveHTTPMaxHeaderBytes(); got != 262144 {
+		t.Errorf("env resolveHTTPMaxHeaderBytes = %d, want 262144", got)
 	}
 	if got := o.resolveHTTPWriteTimeout(); got != 45*time.Second {
 		t.Errorf("env resolveHTTPWriteTimeout = %v, want 45s", got)

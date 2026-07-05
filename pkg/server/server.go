@@ -347,9 +347,13 @@ func New(opts ...Option) (*Server, error) {
 	writeTimeout := o.resolveHTTPWriteTimeout()
 	idleTimeout := o.resolveHTTPIdleTimeout()
 	readTimeout := o.resolveHTTPReadTimeout()
+	maxHeaderBytes := o.resolveHTTPMaxHeaderBytes()
 	httpSrv := &http.Server{
 		Handler:           httpHandler,
 		ReadHeaderTimeout: 5 * time.Second,
+	}
+	if maxHeaderBytes > 0 {
+		httpSrv.MaxHeaderBytes = maxHeaderBytes
 	}
 	if writeTimeout > 0 {
 		httpSrv.WriteTimeout = writeTimeout

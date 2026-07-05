@@ -53,11 +53,12 @@ type options struct {
 
 	// HTTP production hardening. Zero values fall back to safe defaults
 	// resolved in [options.resolveHTTP*].
-	HTTPRateRPS      float64
-	HTTPRateBurst    int
-	HTTPMaxBodyBytes int64
-	HTTPWriteTimeout time.Duration
-	HTTPIdleTimeout  time.Duration
+	HTTPRateRPS        float64
+	HTTPRateBurst      int
+	HTTPMaxBodyBytes   int64
+	HTTPMaxHeaderBytes int
+	HTTPWriteTimeout   time.Duration
+	HTTPIdleTimeout    time.Duration
 	// HTTPReadTimeout caps the total time for reading an entire
 	// request, including headers and body. Distinct from
 	// ReadHeaderTimeout (which only covers the headers and is
@@ -437,6 +438,21 @@ func WithHTTPRateLimit(rps float64, burst int) Option {
 // to disable the cap (not recommended in production).
 func WithHTTPMaxBody(bytes int64) Option {
 	return func(o *options) { o.HTTPMaxBodyBytes = bytes }
+}
+
+// WithHTTPMaxHeaderBytes sets the maximum allowed size of decoded HTTP
+// request headers. A request whose headers exceed the limit returns 431
+// Request Header Fields Too Large. When zero (default), a 1 MiB cap is
+// enforced — matching Go's net/http DefaultMaxHeaderBytes and Envoy's
+// max_request_headers_kb, and generous for legitimate Nacos SDK traffic
+// (typical headers are <1 KB). Pass a negative value to disable the cap
+// (not recommended — without it, a peer can send an oversized header
+// block to drive the process into OOM before the handler runs, or in
+// HTTP/2's case exploit HPACK compression to amplify a small frame into
+// gigabytes of decoded header data). Falls back to the
+// GONACOS_HTTP_MAX_HEADER_BYTES env var.
+func WithHTTPMaxHeaderBytes(bytes int) Option {
+	return func(o *options) { o.HTTPMaxHeaderBytes = bytes }
 }
 
 // WithHTTPWriteTimeout sets the maximum duration of an HTTP write (response).
@@ -996,6 +1012,28 @@ func (o *options) resolveHTTPMaxBody() int64 {
 		}
 	}
 	return 10 * 1024 * 1024
+}
+
+// resolveHTTPMaxHeaderBytes returns the maximum decoded HTTP request
+// header size in bytes. Defaults to 1 MiB when unset — matching Go's
+// net/http DefaultMaxHeaderBytes and Envoy's max_request_headers_kb,
+// and generous for legitimate Nacos SDK traffic (typical headers are
+// <1 KB). A negative return value disables the cap (not recommended —
+// without it, a peer can send an oversized header block to drive the
+// process into OOM before the handler runs, or in HTTP/2's case
+// exploit HPACK compression to amplify a small frame into gigabytes
+// of decoded header data). Falls back to the
+// GONACOS_HTTP_MAX_HEADER_BYTES env var.
+func (o *options) resolveHTTPMaxHeaderBytes() int {
+	if o.HTTPMaxHeaderBytes != 0 {
+		return o.HTTPMaxHeaderBytes
+	}
+	if v := os.Getenv("GONACOS_HTTP_MAX_HEADER_BYTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n != 0 {
+			return n
+		}
+	}
+	return 1 << 20
 }
 
 // resolveHTTPWriteTimeout returns the HTTP write timeout. Defaults to 30s.

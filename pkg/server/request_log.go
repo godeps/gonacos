@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/godeps/gonacos/pkg/observability"
@@ -108,12 +109,19 @@ func redactQuery(raw string) string {
 // request-rate and error-rate panels in Grafana without parsing logs.
 // Labels are intentionally low-cardinality (method + status code class)
 // to avoid blowing up the metrics series count on a high-traffic node.
+//
+// activeRequests tracks in-flight HTTP requests and is reported via
+// gonacos_http_active_requests gauge — symmetric to
+// gonacos_grpc_active_streams. Operators alert when concurrency
+// approaches MaxConns to catch a peer exhausting the connection budget
+// or a slow handler pinning goroutines.
 type requestLogMiddleware struct {
-	logger   Logger
-	verbose  bool
-	next     http.Handler
-	exclude  map[string]struct{}
-	registry *observability.Registry
+	logger         Logger
+	verbose        bool
+	next           http.Handler
+	exclude        map[string]struct{}
+	registry       *observability.Registry
+	activeRequests atomic.Int64
 }
 
 // requestLogExclude is the set of paths that are noisy enough to skip by
@@ -190,6 +198,23 @@ func (r *countingReader) Read(p []byte) (int, error) {
 }
 
 func (m *requestLogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Track in-flight requests so gonacos_http_active_requests reports
+	// current concurrency. Increment before the exclude-list check so
+	// even health/metrics probes (which skip logging but still hold a
+	// goroutine) are counted — the gauge is "goroutines pinned by HTTP
+	// requests", not "logged requests in flight". The deferred func
+	// decrements first, then sets the gauge so the final reported value
+	// reflects the post-decrement count.
+	m.activeRequests.Add(1)
+	defer func() {
+		m.activeRequests.Add(-1)
+		if m.registry != nil {
+			m.registry.Gauge("gonacos_http_active_requests", nil).Set(m.activeRequests.Load())
+		}
+	}()
+	if m.registry != nil {
+		m.registry.Gauge("gonacos_http_active_requests", nil).Set(m.activeRequests.Load())
+	}
 	if !m.verbose {
 		if _, skip := m.exclude[r.URL.Path]; skip {
 			m.next.ServeHTTP(w, r)

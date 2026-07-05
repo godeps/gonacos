@@ -307,3 +307,59 @@ func TestRequestLogMiddlewareRequestBytesZeroForBodyless(t *testing.T) {
 		t.Fatalf("request bytes sum for bodyless GET: want %q in %s", wantSum, out)
 	}
 }
+
+// TestRequestLogMiddlewareActiveRequestsGauge verifies that
+// gonacos_http_active_requests reflects the in-flight HTTP request
+// count: 1 while a handler is running, 0 after it returns. The gauge
+// is the alerting signal for concurrency approaching MaxConns — a
+// sustained high value means goroutines are pinned and legitimate
+// clients are being starved. Symmetric to gonacos_grpc_active_streams.
+func TestRequestLogMiddlewareActiveRequestsGauge(t *testing.T) {
+	var buf bytes.Buffer
+	logger := stubLogger{buf: &buf}
+	registry := observability.NewRegistry()
+
+	// started is closed by the handler when it begins executing —
+	// gives the test a synchronization point to observe the gauge
+	// mid-request. release is closed by the test to let the handler
+	// return.
+	started := make(chan struct{})
+	release := make(chan struct{})
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		w.WriteHeader(http.StatusOK)
+	})
+	mw := newRequestLogMiddleware(logger, false, registry, inner)
+
+	req := httptest.NewRequest(http.MethodGet, "/v3/cs/configs", nil)
+	w := httptest.NewRecorder()
+	go func() {
+		mw.ServeHTTP(w, req)
+	}()
+
+	// Wait for handler to start, then observe the gauge mid-request.
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not start within 2s")
+	}
+
+	g := registry.Gauge("gonacos_http_active_requests", nil)
+	if got := g.Value(); got != 1 {
+		t.Fatalf("active_requests gauge during request = %d, want 1", got)
+	}
+
+	// Let the handler return, then observe the gauge post-request.
+	close(release)
+	// Wait for the deferred gauge set to run.
+	for i := 0; i < 50; i++ {
+		if g.Value() == 0 {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if got := g.Value(); got != 0 {
+		t.Fatalf("active_requests gauge after request = %d, want 0", got)
+	}
+}

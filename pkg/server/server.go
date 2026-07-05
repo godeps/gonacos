@@ -44,6 +44,7 @@ type Server struct {
 	grpcLn        net.Listener
 	stopPeriodic  func()
 	stopRateGC    func()
+	stopResource  func()
 }
 
 // New builds a Server with the given options. It constructs the service
@@ -248,6 +249,7 @@ func New(opts ...Option) (*Server, error) {
 		grpcLn:        grpcLn,
 		stopPeriodic:  stopPeriodic,
 		stopRateGC:    stopRateGC,
+		stopResource:  startResourceCollector(registry, bundle, 30*time.Second),
 	}, nil
 }
 
@@ -322,6 +324,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	if s.stopRateGC != nil {
 		s.stopRateGC()
+	}
+	if s.stopResource != nil {
+		s.stopResource()
 	}
 	if err := s.persist.Save(ctx); err != nil {
 		s.logger.Warnf("save snapshot on shutdown: %v", err)

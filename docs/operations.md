@@ -308,6 +308,11 @@ The following metrics are always present:
 | `gonacos_http_request_duration_seconds{method}` | histogram | HTTP request latency in milliseconds (buckets: 1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000) |
 | `gonacos_grpc_requests_total{method,status}` | counter | gRPC requests served, by gRPC path and status code |
 | `gonacos_grpc_request_duration_seconds{method}` | histogram | gRPC request latency in milliseconds (same buckets as HTTP) |
+| `gonacos_namespaces_total` | gauge | Number of namespaces |
+| `gonacos_configs_total` | gauge | Total config items across all namespaces |
+| `gonacos_services_total` | gauge | Total registered services across all namespaces |
+| `gonacos_instances_total` | gauge | Total service instances across all services (currently 0 — placeholder for future instance-count tracking) |
+| `gonacos_users_total` | gauge | Number of registered users |
 | `gonacos_push_total{type="config"}` | counter | Config change notifications pushed to subscribers |
 | `gonacos_push_total{type="service"}` | counter | Service change notifications pushed to subscribers |
 | `gonacos_config_subscriptions` | gauge | Active config subscriptions (client × dataId) |

@@ -105,6 +105,15 @@ func New(opts ...Option) (*Server, error) {
 		redisClient = embeddedRedis.Client()
 	}
 
+	// Wire the metrics hook before any Redis call. The hook is added to
+	// both external and embedded clients — embedded mode still benefits
+	// from per-command latency visibility (a slow command against the
+	// in-memory store signals a hot path or a regression). The registry
+	// is constructed below, so we add the hook after the registry is
+	// available.
+	registry := observability.NewRegistry()
+	redisClient.AddHook(newRedisMetricsHook(registry))
+
 	persist := store.NewRedisPersistence(redisClient, coord, dumpPath)
 	persist.SetBackupCount(o.resolveSnapshotBackupCount())
 	if err := persist.Load(context.Background()); err != nil {
@@ -121,7 +130,6 @@ func New(opts ...Option) (*Server, error) {
 	}
 
 	push := app.NewPushService(grpcsrv.NewConnectionRegistry(), bundle.Config, bundle.Naming)
-	registry := observability.NewRegistry()
 	// Publish the binary's build identity as a Prometheus gauge so operators
 	// can query `gonacos_build_info` to see which version/commit is deployed
 	// across a fleet, alert on version drift, and verify rollouts landed.

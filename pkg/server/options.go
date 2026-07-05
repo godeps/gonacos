@@ -290,10 +290,11 @@ func (o *options) resolveStrictSnapshot() bool {
 // from the server options. Returns nil when throttling is disabled
 // (maxFailures <= 0), so the handler builder leaves /login unwrapped.
 func (o *options) buildLoginThrottle() *app.LoginThrottle {
-	if o.LoginMaxFailures <= 0 {
+	maxFailures := o.resolveLoginMaxFailures()
+	if maxFailures <= 0 {
 		return nil
 	}
-	return app.NewLoginThrottle(o.LoginMaxFailures, o.LoginFailWindow, o.LoginLockoutDuration)
+	return app.NewLoginThrottle(maxFailures, o.resolveLoginFailWindow(), o.resolveLoginLockoutDuration())
 }
 
 // resolveHTTPRateRPS returns the configured per-IP rate limit (requests per
@@ -367,6 +368,75 @@ func (o *options) resolveHTTPIdleTimeout() time.Duration {
 		}
 	}
 	return 120 * time.Second
+}
+
+// resolveHTTPVerboseLog returns whether to log every HTTP request including
+// health/metrics probes. Defaults to false.
+func (o *options) resolveHTTPVerboseLog() bool {
+	if o.HTTPVerboseLog {
+		return true
+	}
+	switch strings.ToLower(os.Getenv("GONACOS_HTTP_VERBOSE_LOG")) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
+}
+
+// resolveLoginMaxFailures returns the login brute-force lockout threshold.
+// Returns 0 (disabled) when unset.
+func (o *options) resolveLoginMaxFailures() int {
+	if o.LoginMaxFailures > 0 {
+		return o.LoginMaxFailures
+	}
+	if v := os.Getenv("GONACOS_LOGIN_MAX_FAILURES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
+}
+
+// resolveLoginFailWindow returns the window over which consecutive login
+// failures are counted. Defaults to 5m when throttling is enabled.
+func (o *options) resolveLoginFailWindow() time.Duration {
+	if o.LoginFailWindow > 0 {
+		return o.LoginFailWindow
+	}
+	if v := os.Getenv("GONACOS_LOGIN_FAIL_WINDOW"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 5 * time.Minute
+}
+
+// resolveLoginLockoutDuration returns the lockout duration applied after the
+// failure threshold is reached. Defaults to 15m when throttling is enabled.
+func (o *options) resolveLoginLockoutDuration() time.Duration {
+	if o.LoginLockoutDuration > 0 {
+		return o.LoginLockoutDuration
+	}
+	if v := os.Getenv("GONACOS_LOGIN_LOCKOUT_DURATION"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 15 * time.Minute
+}
+
+// resolveSnapshotBackupCount returns how many prior disk-dump snapshots to
+// retain. Returns 0 (no rotation) when unset.
+func (o *options) resolveSnapshotBackupCount() int {
+	if o.SnapshotBackupCount > 0 {
+		return o.SnapshotBackupCount
+	}
+	if v := os.Getenv("GONACOS_SNAPSHOT_BACKUP_COUNT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
 }
 
 // splitHostPort splits an address into host and port. Returns "127.0.0.1" and

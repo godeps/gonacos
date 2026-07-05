@@ -159,6 +159,11 @@ Environment variable fallbacks (used when the corresponding option is not set):
 | `GONACOS_HTTP_MAX_BODY` | `WithHTTPMaxBody` |
 | `GONACOS_HTTP_WRITE_TIMEOUT` | `WithHTTPWriteTimeout` |
 | `GONACOS_HTTP_IDLE_TIMEOUT` | `WithHTTPIdleTimeout` |
+| `GONACOS_HTTP_VERBOSE_LOG` | `WithHTTPVerboseLog` (`1`/`true`/`yes` to enable) |
+| `GONACOS_LOGIN_MAX_FAILURES` | `WithLoginThrottle` (also sets `GONACOS_LOGIN_FAIL_WINDOW` and `GONACOS_LOGIN_LOCKOUT_DURATION`; both default when only MAX_FAILURES is set) |
+| `GONACOS_LOGIN_FAIL_WINDOW` | `WithLoginThrottle` fail window (Go duration; default `5m`) |
+| `GONACOS_LOGIN_LOCKOUT_DURATION` | `WithLoginThrottle` lockout duration (Go duration; default `15m`) |
+| `GONACOS_SNAPSHOT_BACKUP_COUNT` | `WithSnapshotBackupCount` (int; default `0` = no rotation) |
 
 ## Production hardening
 

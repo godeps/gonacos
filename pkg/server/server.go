@@ -86,7 +86,7 @@ func New(opts ...Option) (*Server, error) {
 	}
 
 	persist := store.NewRedisPersistence(redisClient, coord, dumpPath)
-	persist.SetBackupCount(o.SnapshotBackupCount)
+	persist.SetBackupCount(o.resolveSnapshotBackupCount())
 	if err := persist.Load(context.Background()); err != nil {
 		if o.resolveStrictSnapshot() {
 			_ = redisClient.Close()
@@ -198,7 +198,7 @@ func New(opts ...Option) (*Server, error) {
 
 	httpHandler = app.NewMaxBodyMiddleware(o.resolveHTTPMaxBody(), httpHandler)
 
-	httpHandler = newRequestLogMiddleware(logger, o.HTTPVerboseLog, httpHandler)
+	httpHandler = newRequestLogMiddleware(logger, o.resolveHTTPVerboseLog(), httpHandler)
 
 	// Security headers outermost so every response — including 429/413/500
 	// produced by the upper middlewares — carries nosniff, frame-options,

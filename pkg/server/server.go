@@ -11,6 +11,7 @@ import (
 
 	"github.com/godeps/gonacos/pkg/app"
 	"github.com/godeps/gonacos/pkg/cluster"
+	"github.com/godeps/gonacos/pkg/observability"
 	grpcsrv "github.com/godeps/gonacos/pkg/protocol/grpc"
 	"github.com/godeps/gonacos/pkg/store"
 	"github.com/redis/go-redis/v9"
@@ -98,7 +99,9 @@ func New(opts ...Option) (*Server, error) {
 	}
 
 	push := app.NewPushService(grpcsrv.NewConnectionRegistry(), bundle.Config, bundle.Naming)
+	registry := observability.NewRegistry()
 	if push != nil {
+		push.SetMetricsRegistry(registry)
 		push.InstallCallbacks()
 	}
 	grpcSrv := app.SetupGRPCServerWithPush(bundle, push)
@@ -157,7 +160,7 @@ func New(opts ...Option) (*Server, error) {
 	}
 
 	httpSrv := &http.Server{
-		Handler:           app.NewHandlerWithServicesWithCoordinator(o.resolveRoot(), bundle, coord),
+		Handler:           app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

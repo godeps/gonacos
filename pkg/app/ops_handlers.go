@@ -49,6 +49,18 @@ func registerOpsRoutes(
 	register(http.MethodGet, "/v3/admin/ops/pprof/threadcreate", pprof.Handler("threadcreate").ServeHTTP)
 }
 
+// RegisterPublicMetrics registers /metrics on the given mux as the standard
+// Prometheus scrape path. Unlike /v3/admin/ops/metrics (which goes through
+// `register` and gets a /nacos-prefixed twin), /metrics is registered raw so
+// Prometheus can scrape it with the default job config.
+func RegisterPublicMetrics(mux *http.ServeMux, registry *observability.Registry) {
+	if registry == nil {
+		return
+	}
+	h := opsHandler{registry: registry, refresh: registry.RegisterProcessMetrics()}
+	mux.HandleFunc("/metrics", h.metrics)
+}
+
 func (h opsHandler) metrics(w http.ResponseWriter, r *http.Request) {
 	if h.registry == nil {
 		protocol.WriteError(w, http.StatusNotImplemented, protocol.Error{

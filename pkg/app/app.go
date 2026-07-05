@@ -107,11 +107,24 @@ func NewHandlerWithServices(root string, services *ServiceBundle) http.Handler {
 // save), the services are (re)registered into it so the HTTP backup/restore
 // endpoints and the persistence layer share the same coordinator.
 func NewHandlerWithServicesWithCoordinator(root string, services *ServiceBundle, coord *store.Coordinator) http.Handler {
+	return NewHandlerWithServicesAndRegistry(root, services, coord, nil)
+}
+
+// NewHandlerWithServicesAndRegistry is like NewHandlerWithServicesWithCoordinator
+// but also accepts a shared *observability.Registry. When registry is nil, a
+// fresh registry is created (matching the legacy behavior). When registry is
+// non-nil (passed from the server, which also wires it into the push service),
+// the HTTP /metrics endpoint and the push service share the same registry so
+// scrapes see push-path counters alongside the HTTP handlers' counters.
+func NewHandlerWithServicesAndRegistry(root string, services *ServiceBundle, coord *store.Coordinator, registry *observability.Registry) http.Handler {
 	if services == nil {
 		services = NewServiceBundle()
 	}
 	if coord == nil {
 		coord = store.NewCoordinator()
+	}
+	if registry == nil {
+		registry = observability.NewRegistry()
 	}
 
 	mux := http.NewServeMux()
@@ -151,8 +164,6 @@ func NewHandlerWithServicesWithCoordinator(root string, services *ServiceBundle,
 	coord.Register(aiSvc)
 	coord.Register(clusterSvc)
 
-	registry := observability.NewRegistry()
-
 	registerNamespaceRoutes(register, namespaceSvc)
 	registerConfigRoutes(register, configSvc)
 	registerNamingRoutes(register, namingSvc)
@@ -160,6 +171,9 @@ func NewHandlerWithServicesWithCoordinator(root string, services *ServiceBundle,
 	registerAIRoutes(register, aiSvc)
 	registerClusterRoutes(register, clusterSvc)
 	registerOpsRoutes(register, coord, registry)
+	// Standard Prometheus scrape path (no /nacos prefix) so default
+	// prometheus.yml `metrics_path: /metrics` works without configuration.
+	RegisterPublicMetrics(mux, registry)
 	registerStubRoutes(register, configSvc, namingSvc, aiSvc, clusterSvc)
 
 	mux.Handle("GET /v3/console/ui", web.SpaHandler())

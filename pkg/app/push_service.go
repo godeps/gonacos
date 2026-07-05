@@ -10,6 +10,7 @@ import (
 
 	configsvc "github.com/godeps/gonacos/pkg/config"
 	namingsvc "github.com/godeps/gonacos/pkg/naming"
+	"github.com/godeps/gonacos/pkg/observability"
 	"github.com/godeps/gonacos/pkg/protocol/grpc"
 )
 
@@ -42,6 +43,49 @@ type PushService struct {
 	serviceSubs   map[string]map[string]bool // serviceKey -> set of clientIPs
 	ipConfigSubs  map[string]map[string]bool // clientIP -> set of configKeys
 	ipServiceSubs map[string]map[string]bool // clientIP -> set of serviceKeys
+
+	metrics *pushMetrics
+}
+
+// pushMetrics holds the observability handles for the push path. Nil when no
+// registry is configured (metrics are no-ops).
+type pushMetrics struct {
+	pushConfigTotal  *observability.Counter
+	pushServiceTotal *observability.Counter
+	configSubsGauge  *observability.Gauge
+	serviceSubsGauge *observability.Gauge
+}
+
+// SetMetricsRegistry wires observability counters/gauges for the push path.
+// Pass nil to disable metrics. Safe to call before or after InstallCallbacks.
+func (p *PushService) SetMetricsRegistry(r *observability.Registry) {
+	if p == nil || r == nil {
+		return
+	}
+	p.metrics = &pushMetrics{
+		pushConfigTotal:  r.Counter("gonacos_push_total", map[string]string{"type": "config"}),
+		pushServiceTotal: r.Counter("gonacos_push_total", map[string]string{"type": "service"}),
+		configSubsGauge:  r.Gauge("gonacos_config_subscriptions", nil),
+		serviceSubsGauge: r.Gauge("gonacos_service_subscriptions", nil),
+	}
+}
+
+// refreshSubGaugesLocked updates the subscription gauges. Caller must hold
+// p.mu (either read or write lock).
+func (p *PushService) refreshSubGaugesLocked() {
+	if p == nil || p.metrics == nil {
+		return
+	}
+	configTotal := 0
+	for _, ips := range p.configSubs {
+		configTotal += len(ips)
+	}
+	serviceTotal := 0
+	for _, ips := range p.serviceSubs {
+		serviceTotal += len(ips)
+	}
+	p.metrics.configSubsGauge.Set(int64(configTotal))
+	p.metrics.serviceSubsGauge.Set(int64(serviceTotal))
 }
 
 // NewPushService creates a PushService wired to the given registry and
@@ -105,6 +149,7 @@ func (p *PushService) TrackConfigSubscription(clientIP, namespaceID, groupName, 
 		p.removeSub(p.configSubs, ck, clientIP)
 		p.removeSub(p.ipConfigSubs, clientIP, ck)
 	}
+	p.refreshSubGaugesLocked()
 }
 
 // TrackServiceSubscription records that a client IP is subscribed to a
@@ -130,6 +175,7 @@ func (p *PushService) TrackServiceSubscription(clientIP, namespaceID, groupName,
 		p.removeSub(p.serviceSubs, sk, clientIP)
 		p.removeSub(p.ipServiceSubs, clientIP, sk)
 	}
+	p.refreshSubGaugesLocked()
 }
 
 // removeSub deletes a key from a two-level map. Cleans up empty inner maps.
@@ -157,6 +203,7 @@ func (p *PushService) UnregisterClient(clientIP string) {
 		p.removeSub(p.serviceSubs, sk, clientIP)
 	}
 	delete(p.ipServiceSubs, clientIP)
+	p.refreshSubGaugesLocked()
 	p.mu.Unlock()
 	p.registry.Unregister(clientIP)
 }
@@ -181,6 +228,9 @@ func (p *PushService) notifyConfigChange(namespaceID, groupName, dataID string) 
 	payload := buildConfigChangeNotify(namespaceID, groupName, dataID)
 	for _, ip := range ips {
 		p.registry.Push(ip, payload)
+	}
+	if p.metrics != nil {
+		p.metrics.pushConfigTotal.Add(int64(len(ips)))
 	}
 }
 
@@ -207,6 +257,9 @@ func (p *PushService) notifyServiceChange(namespaceID, groupName, serviceName st
 	}
 	for _, ip := range ips {
 		p.registry.Push(ip, payload)
+	}
+	if p.metrics != nil {
+		p.metrics.pushServiceTotal.Add(int64(len(ips)))
 	}
 }
 

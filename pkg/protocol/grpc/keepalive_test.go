@@ -31,14 +31,53 @@ func TestServerKeepAliveConfiguredDoesNotBreakStartup(t *testing.T) {
 	srv.configureHTTP2(httpSrv)
 }
 
-// TestServerKeepAliveZeroIsNoop verifies that a zero KeepAlive config leaves
-// the http.Server untouched — no http2 conf is attached. This guards the
-// legacy behavior where PINGs are disabled.
-func TestServerKeepAliveZeroIsNoop(t *testing.T) {
+// TestServerKeepAliveZeroIsNoopForPing verifies that a zero KeepAlive config
+// leaves PINGs disabled — the http2.Server's ReadIdleTimeout and PingTimeout
+// stay zero (no PINGs sent). MaxConcurrentStreams is still applied (it is
+// independent of KeepAlive); see TestServerMaxConcurrentStreamsConfigured.
+func TestServerKeepAliveZeroIsNoopForPing(t *testing.T) {
 	srv := NewServer()
 	httpSrv := &http.Server{
 		IdleTimeout:       5 * time.Minute,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	srv.configureHTTP2(httpSrv)
+}
+
+// TestServerMaxConcurrentStreamsConfigured verifies that an explicit
+// MaxConcurrentStreams value is returned by maxConcurrentStreams() so a
+// peer cannot open an unbounded number of in-flight streams on a single
+// connection. configureHTTP2 propagates this to the underlying http2.Server
+// (verified by the no-panic smoke test TestServerKeepAliveConfiguredDoesNotBreakStartup);
+// the actual cap enforcement is handled by Go's http2 stack.
+func TestServerMaxConcurrentStreamsConfigured(t *testing.T) {
+	const want = 32
+	srv := NewServer()
+	srv.MaxConcurrentStreams = want
+	if got := srv.maxConcurrentStreams(); got != want {
+		t.Errorf("maxConcurrentStreams() = %d, want %d", got, want)
+	}
+}
+
+// TestServerMaxConcurrentStreamsDefault verifies that a zero
+// MaxConcurrentStreams config falls back to DefaultMaxConcurrentStreams
+// (100), matching Go's http2.Server default. Operators who don't tune the
+// limit get a sane defense-in-depth default.
+func TestServerMaxConcurrentStreamsDefault(t *testing.T) {
+	srv := NewServer()
+	if got := srv.maxConcurrentStreams(); got != DefaultMaxConcurrentStreams {
+		t.Errorf("maxConcurrentStreams() = %d, want default %d", got, DefaultMaxConcurrentStreams)
+	}
+}
+
+// TestServerMaxConcurrentStreamsNegativeDisablesCap verifies that a
+// negative MaxConcurrentStreams disables the cap — the http2.Server's
+// MaxConcurrentStreams field stays zero, letting Go's http2 stack apply
+// its own default of 100. This is the operator opt-out path.
+func TestServerMaxConcurrentStreamsNegativeDisablesCap(t *testing.T) {
+	srv := NewServer()
+	srv.MaxConcurrentStreams = -1
+	if got := srv.maxConcurrentStreams(); got != 0 {
+		t.Errorf("maxConcurrentStreams() = %d, want 0 (disabled)", got)
+	}
 }

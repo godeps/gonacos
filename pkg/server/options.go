@@ -116,6 +116,20 @@ type options struct {
 	// GONACOS_GRPC_READ_FRAME_TIMEOUT env var.
 	GRPCReadFrameTimeout time.Duration
 
+	// GRPCMaxConcurrentStreams caps the number of concurrent HTTP/2
+	// streams accepted on a single gRPC client connection. Zero falls
+	// back to 100 (matching Go's http2.Server default and the gRPC
+	// client's advertised limit); negative disables the cap (http2.Server
+	// then applies its own 100 default). This is the per-connection
+	// defense complementary to MaxConns (which caps total connections):
+	// a single connection that opens 100 streams each holding a server
+	// goroutine + ~4 MiB of frame-buffer headroom can still burn
+	// goroutines and memory. Lowering to e.g. 32 tightens the
+	// per-connection blast radius; legitimate SDK clients rarely need
+	// more than a handful of concurrent streams. Falls back to
+	// GONACOS_GRPC_MAX_CONCURRENT_STREAMS env var.
+	GRPCMaxConcurrentStreams int
+
 	// MaxConns caps the total number of concurrent TCP connections the
 	// HTTP and gRPC servers accept. Zero falls back to resolveMaxConns
 	// (10000 default). A negative value disables the cap. When the cap is
@@ -592,6 +606,21 @@ func WithGRPCReadFrameTimeout(d time.Duration) Option {
 	return func(o *options) { o.GRPCReadFrameTimeout = d }
 }
 
+// WithGRPCMaxConcurrentStreams caps the number of concurrent HTTP/2
+// streams accepted on a single gRPC client connection. Zero falls back
+// to 100 (matching Go's http2.Server default); negative disables the
+// cap (http2.Server applies its own 100 default). This is the
+// per-connection defense complementary to [WithMaxConns]: a single
+// connection that opens many in-flight streams each holding a server
+// goroutine + frame-buffer headroom can still burn goroutines and
+// memory. Lowering to e.g. 32 tightens the per-connection blast
+// radius; legitimate SDK clients rarely need more than a handful of
+// concurrent streams. Falls back to the
+// GONACOS_GRPC_MAX_CONCURRENT_STREAMS env var.
+func WithGRPCMaxConcurrentStreams(n int) Option {
+	return func(o *options) { o.GRPCMaxConcurrentStreams = n }
+}
+
 func (o *options) resolveAddr() string {
 	if o.Addr != "" {
 		return o.Addr
@@ -1035,6 +1064,26 @@ func (o *options) resolveGRPCReadFrameTimeout() time.Duration {
 		}
 	}
 	return 30 * time.Second
+}
+
+// resolveGRPCMaxConcurrentStreams returns the per-connection concurrent-
+// stream cap for the gRPC server. Defaults to 100 (matching Go's
+// http2.Server default and the gRPC client's advertised limit); negative
+// disables the cap (returns 0 — http2.Server then applies its own 100
+// default; not recommended — re-opens the per-connection goroutine-
+// exhaustion vector where a single peer opens 100 streams each holding
+// a goroutine). Falls back to GONACOS_GRPC_MAX_CONCURRENT_STREAMS env
+// var.
+func (o *options) resolveGRPCMaxConcurrentStreams() int {
+	if o.GRPCMaxConcurrentStreams != 0 {
+		return o.GRPCMaxConcurrentStreams
+	}
+	if v := os.Getenv("GONACOS_GRPC_MAX_CONCURRENT_STREAMS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n != 0 {
+			return n
+		}
+	}
+	return 100
 }
 
 // resolveMaxConns returns the concurrent-connection cap. Defaults to 10000

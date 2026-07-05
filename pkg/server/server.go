@@ -189,6 +189,12 @@ func New(opts ...Option) (*Server, error) {
 	// streaming RPCs; a streaming peer that sends a frame every <30s
 	// is unaffected. Negative disables (not recommended).
 	grpcSrv.ReadFrameTimeout = o.resolveGRPCReadFrameTimeout()
+	// Per-connection concurrent-stream cap. Complementary to MaxConns
+	// (which caps total connections): a single malicious connection
+	// can otherwise open 100 in-flight streams each holding a server
+	// goroutine + frame-buffer headroom. Defaults to 100 (Go's http2
+	// default); lowering tightens the per-connection blast radius.
+	grpcSrv.MaxConcurrentStreams = o.resolveGRPCMaxConcurrentStreams()
 	// Wire the same metrics registry into the gRPC server so
 	// gonacos_grpc_requests_total is exposed under /metrics alongside the
 	// HTTP and process metrics. A single scrape captures everything.

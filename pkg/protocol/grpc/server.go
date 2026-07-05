@@ -163,12 +163,33 @@ type Server struct {
 	// The timeout applies per-frame on both unary and streaming RPCs;
 	// a streaming peer that sends a frame every <30s is unaffected.
 	ReadFrameTimeout time.Duration
+
+	// MaxConcurrentStreams caps the number of concurrent HTTP/2 streams
+	// accepted on a single client connection. Zero falls back to
+	// [DefaultMaxConcurrentStreams] (100). A negative value disables the
+	// cap (not recommended — Go's http2.Server defaults to 100 anyway,
+	// but a peer can still open 100 streams per connection, and across
+	// many connections the total in-flight stream count is unbounded).
+	//
+	// This is the per-connection defense complementary to MaxConns (which
+	// caps total connections): a single connection that opens 100 streams
+	// each holding a server goroutine + ~4 MiB of frame-buffer headroom
+	// can still burn goroutines and memory. Lowering this to e.g. 32
+	// tightens the per-connection blast radius; legitimate SDK clients
+	// rarely need more than a handful of concurrent streams.
+	MaxConcurrentStreams int
 }
 
 // DefaultReadFrameTimeout is the per-frame read deadline when
 // ReadFrameTimeout is zero. 30s is generous for legitimate clients
 // (a 4 MiB frame at ~133 KB/s) while bounding the slowloris window.
 const DefaultReadFrameTimeout = 30 * time.Second
+
+// DefaultMaxConcurrentStreams is the per-connection concurrent-stream cap
+// when MaxConcurrentStreams is zero. 100 matches Go's http2.Server default
+// and the gRPC client's advertised limit; legitimate SDK traffic rarely
+// exceeds a handful of in-flight streams per connection.
+const DefaultMaxConcurrentStreams = 100
 
 // KeepAliveConfig configures HTTP/2 keepalive PINGs. Zero values disable the
 // corresponding behavior.
@@ -229,6 +250,21 @@ func (s *Server) readFrameTimeout() time.Duration {
 		return s.ReadFrameTimeout
 	}
 	return DefaultReadFrameTimeout
+}
+
+// maxConcurrentStreams returns the per-connection stream cap, falling back
+// to DefaultMaxConcurrentStreams when unset. A negative value disables the
+// cap (returns 0 — http2.Server then applies its own default of 100; not
+// recommended — re-opens the per-connection goroutine-exhaustion vector
+// where a single peer opens 100 streams each holding a goroutine).
+func (s *Server) maxConcurrentStreams() int {
+	if s.MaxConcurrentStreams < 0 {
+		return 0
+	}
+	if s.MaxConcurrentStreams != 0 {
+		return s.MaxConcurrentStreams
+	}
+	return DefaultMaxConcurrentStreams
 }
 
 // recordFrameReadTimeout increments gonacos_grpc_frame_read_timeouts_total
@@ -370,27 +406,34 @@ func (s *Server) ServeTLSConfig(ln net.Listener, cfg *tls.Config) error {
 	return s.server.ServeTLS(ln, "", "")
 }
 
-// configureHTTP2 wires [Server.KeepAlive] into the http.Server's HTTP/2
-// transport. Called under s.mu. When ReadIdleTimeout > 0, the http2 server
-// sends a PING after that duration of silence and closes the connection if
-// no ack arrives within PingTimeout (defaulting to 15s). This catches
-// half-open connections — a client that crashed without sending a FIN keeps
-// its server-side goroutine + file descriptor alive indefinitely without
-// PINGs, since TCP only learns the peer is gone when it tries to write.
+// configureHTTP2 wires [Server.KeepAlive] and [Server.MaxConcurrentStreams]
+// into the http.Server's HTTP/2 transport. Called under s.mu. When
+// ReadIdleTimeout > 0, the http2 server sends a PING after that duration of
+// silence and closes the connection if no ack arrives within PingTimeout
+// (defaulting to 15s). This catches half-open connections — a client that
+// crashed without sending a FIN keeps its server-side goroutine + file
+// descriptor alive indefinitely without PINGs, since TCP only learns the
+// peer is gone when it tries to write.
+//
+// MaxConcurrentStreams is always set: a negative config disables the cap
+// (http2.Server then uses its own default of 100), zero falls back to
+// DefaultMaxConcurrentStreams (also 100), and any positive value is
+// applied as-is. Lowering it tightens the per-connection blast radius
+// when a peer opens many in-flight streams.
 //
 // ConfigureServer is a no-op when the http.Server already has an http2 conf
 // attached, so calling it on a server that was previously configured is
 // safe.
 func (s *Server) configureHTTP2(srv *http.Server) {
-	if s.KeepAlive.ReadIdleTimeout <= 0 {
-		return
-	}
 	h2s := &http2.Server{
-		IdleTimeout:     srv.IdleTimeout,
-		ReadIdleTimeout: s.KeepAlive.ReadIdleTimeout,
+		IdleTimeout:          srv.IdleTimeout,
+		MaxConcurrentStreams: uint32(s.maxConcurrentStreams()),
 	}
-	if s.KeepAlive.PingTimeout > 0 {
-		h2s.PingTimeout = s.KeepAlive.PingTimeout
+	if s.KeepAlive.ReadIdleTimeout > 0 {
+		h2s.ReadIdleTimeout = s.KeepAlive.ReadIdleTimeout
+		if s.KeepAlive.PingTimeout > 0 {
+			h2s.PingTimeout = s.KeepAlive.PingTimeout
+		}
 	}
 	_ = http2.ConfigureServer(srv, h2s)
 }

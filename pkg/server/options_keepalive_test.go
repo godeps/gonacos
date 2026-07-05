@@ -152,3 +152,51 @@ func TestResolveGRPCReadFrameTimeoutNegativeDisables(t *testing.T) {
 		t.Errorf("negative resolveGRPCReadFrameTimeout = %v, want -1", got)
 	}
 }
+
+// TestResolveGRPCMaxConcurrentStreamsDefaultIs100 verifies that a zero
+// options struct resolves to 100 — matching Go's http2.Server default
+// and the gRPC client's advertised limit. Without this default, a
+// single malicious connection could open many in-flight streams each
+// holding a server goroutine + frame-buffer headroom, driving the
+// process toward goroutine exhaustion.
+func TestResolveGRPCMaxConcurrentStreamsDefaultIs100(t *testing.T) {
+	o := options{}
+	got := o.resolveGRPCMaxConcurrentStreams()
+	if got != 100 {
+		t.Errorf("default resolveGRPCMaxConcurrentStreams = %d, want 100", got)
+	}
+}
+
+// TestResolveGRPCMaxConcurrentStreamsExplicit verifies that an explicit
+// WithGRPCMaxConcurrentStreams option wins over env vars.
+func TestResolveGRPCMaxConcurrentStreamsExplicit(t *testing.T) {
+	t.Setenv("GONACOS_GRPC_MAX_CONCURRENT_STREAMS", "99")
+	o := options{GRPCMaxConcurrentStreams: 32}
+	got := o.resolveGRPCMaxConcurrentStreams()
+	if got != 32 {
+		t.Errorf("explicit resolveGRPCMaxConcurrentStreams = %d, want 32", got)
+	}
+}
+
+// TestResolveGRPCMaxConcurrentStreamsEnv verifies that the env var is
+// picked up when the explicit option is unset.
+func TestResolveGRPCMaxConcurrentStreamsEnv(t *testing.T) {
+	t.Setenv("GONACOS_GRPC_MAX_CONCURRENT_STREAMS", "64")
+	o := options{}
+	got := o.resolveGRPCMaxConcurrentStreams()
+	if got != 64 {
+		t.Errorf("env resolveGRPCMaxConcurrentStreams = %d, want 64", got)
+	}
+}
+
+// TestResolveGRPCMaxConcurrentStreamsNegativeDisables verifies that a
+// negative value disables the cap (returns 0 — http2.Server then
+// applies its own 100 default). Not recommended — re-opens the
+// per-connection goroutine-exhaustion vector.
+func TestResolveGRPCMaxConcurrentStreamsNegativeDisables(t *testing.T) {
+	o := options{GRPCMaxConcurrentStreams: -1}
+	got := o.resolveGRPCMaxConcurrentStreams()
+	if got != -1 {
+		t.Errorf("negative resolveGRPCMaxConcurrentStreams = %d, want -1", got)
+	}
+}

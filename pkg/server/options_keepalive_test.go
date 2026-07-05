@@ -234,3 +234,53 @@ func TestResolveGRPCWriteByteTimeoutEnv(t *testing.T) {
 		t.Errorf("env resolveGRPCWriteByteTimeout = %v, want 30s", got)
 	}
 }
+
+// TestResolveGRPCMaxHeaderBytesDefault verifies that a zero options
+// struct resolves to 1 MiB — the header-bomb defense default. Without
+// this cap, a peer can exploit HPACK compression to decompress a 4 KB
+// frame into 1 GiB of decoded header data, driving the process into
+// OOM before the handler runs. Operators who don't tune the limit get
+// a sane default matching Go's net/http DefaultMaxHeaderBytes and
+// Envoy's max_request_headers_kb.
+func TestResolveGRPCMaxHeaderBytesDefault(t *testing.T) {
+	o := options{}
+	got := o.resolveGRPCMaxHeaderBytes()
+	if got != 1<<20 {
+		t.Errorf("default resolveGRPCMaxHeaderBytes = %d, want %d (1 MiB)", got, 1<<20)
+	}
+}
+
+// TestResolveGRPCMaxHeaderBytesExplicit verifies that an explicit
+// WithGRPCMaxHeaderBytes option wins over env vars and the default.
+func TestResolveGRPCMaxHeaderBytesExplicit(t *testing.T) {
+	t.Setenv("GONACOS_GRPC_MAX_HEADER_BYTES", "524288")
+	o := options{GRPCMaxHeaderBytes: 64 * 1024}
+	got := o.resolveGRPCMaxHeaderBytes()
+	if got != 64*1024 {
+		t.Errorf("explicit resolveGRPCMaxHeaderBytes = %d, want %d", got, 64*1024)
+	}
+}
+
+// TestResolveGRPCMaxHeaderBytesEnv verifies that the env var is
+// picked up when the explicit option is unset.
+func TestResolveGRPCMaxHeaderBytesEnv(t *testing.T) {
+	t.Setenv("GONACOS_GRPC_MAX_HEADER_BYTES", "524288")
+	o := options{}
+	got := o.resolveGRPCMaxHeaderBytes()
+	if got != 524288 {
+		t.Errorf("env resolveGRPCMaxHeaderBytes = %d, want 524288", got)
+	}
+}
+
+// TestResolveGRPCMaxHeaderBytesNegativeDisablesCap verifies that a
+// negative value is propagated as-is to grpcSrv.MaxHeaderBytes, where
+// grpc.Server.maxHeaderBytes() translates it to 0 (disabled). This
+// matches the resolveGRPCMaxConcurrentStreams pattern: options-layer
+// pass-through, grpc.Server-layer normalization.
+func TestResolveGRPCMaxHeaderBytesNegativeDisablesCap(t *testing.T) {
+	o := options{GRPCMaxHeaderBytes: -1}
+	got := o.resolveGRPCMaxHeaderBytes()
+	if got != -1 {
+		t.Errorf("negative resolveGRPCMaxHeaderBytes = %d, want -1 (pass-through)", got)
+	}
+}

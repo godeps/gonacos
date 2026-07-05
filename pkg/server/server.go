@@ -203,6 +203,14 @@ func New(opts ...Option) (*Server, error) {
 	// is per-write-byte, not per-RPC; a streaming RPC that continuously
 	// writes is unaffected.
 	grpcSrv.WriteByteTimeout = o.resolveGRPCWriteByteTimeout()
+	// Per-request decoded HTTP/2 header size cap. This is the
+	// header-bomb defense: HPACK compression lets a 4 KB compressed
+	// frame decompress to 1 GiB of decoded header data, so without a
+	// cap a single malicious request can exhaust memory before the
+	// handler runs. Defaults to 1 MiB (Go's net/http default and
+	// Envoy's max_request_headers_kb; generous for legitimate Nacos
+	// SDK traffic — typical headers are <1 KB).
+	grpcSrv.MaxHeaderBytes = o.resolveGRPCMaxHeaderBytes()
 	// Wire the same metrics registry into the gRPC server so
 	// gonacos_grpc_requests_total is exposed under /metrics alongside the
 	// HTTP and process metrics. A single scrape captures everything.

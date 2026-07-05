@@ -208,6 +208,21 @@ type Server struct {
 	// RPC that continuously writes is unaffected; only a connection
 	// that stalls mid-write is closed.
 	WriteByteTimeout time.Duration
+
+	// MaxHeaderBytes caps the total size of decoded HTTP/2 headers the
+	// server accepts on a single request. Zero falls back to
+	// [DefaultMaxHeaderBytes] (1 MiB). A negative value disables the
+	// cap (not recommended — Go's net/http default is 1 MiB, and a
+	// malicious peer can exploit HPACK compression to decompress a small
+	// header block into gigabytes, driving the process into OOM before
+	// the handler runs). 1 MiB is generous for legitimate gRPC traffic
+	// (typical Nacos SDK headers are <1 KB) while bounding the
+	// header-bomb amplification factor. Note this is the *decoded* size
+	// — HPACK-compressed bytes can be much smaller, which is exactly
+	// the attack vector (a 4 KB compressed frame that decompresses to
+	// 1 GiB). The cap is applied by Go's http2 stack via
+	// http.Server.MaxHeaderBytes.
+	MaxHeaderBytes int
 }
 
 // DefaultReadFrameTimeout is the per-frame read deadline when
@@ -220,6 +235,17 @@ const DefaultReadFrameTimeout = 30 * time.Second
 // and the gRPC client's advertised limit; legitimate SDK traffic rarely
 // exceeds a handful of in-flight streams per connection.
 const DefaultMaxConcurrentStreams = 100
+
+// DefaultMaxHeaderListSize is the per-request decoded HTTP/2 header size
+// cap when MaxHeaderBytes is zero. 1 MiB matches Go's net/http default
+// (DefaultMaxHeaderBytes) and Envoy's max_request_headers_kb; it is
+// generous for legitimate gRPC traffic (typical Nacos SDK headers are
+// <1 KB) while bounding the header-bomb amplification factor. Without
+// this cap, a peer can exploit HPACK compression to decompress a small
+// header block into gigabytes, driving the process into OOM before the
+// handler runs. The cap is applied by Go's http2 stack via
+// http.Server.MaxHeaderBytes.
+const DefaultMaxHeaderBytes = 1 << 20
 
 // KeepAliveConfig configures HTTP/2 keepalive PINGs. Zero values disable the
 // corresponding behavior.
@@ -295,6 +321,22 @@ func (s *Server) maxConcurrentStreams() int {
 		return s.MaxConcurrentStreams
 	}
 	return DefaultMaxConcurrentStreams
+}
+
+// maxHeaderBytes returns the per-request decoded HTTP/2 header size
+// cap, falling back to DefaultMaxHeaderBytes when unset. A negative
+// value disables the cap (returns 0 — Go's net/http then applies its
+// own 1 MiB default via http.Server.MaxHeaderBytes; not recommended to
+// rely on the implicit default since the explicit zero makes the cap
+// invisible to operators reading the config).
+func (s *Server) maxHeaderBytes() int {
+	if s.MaxHeaderBytes < 0 {
+		return 0
+	}
+	if s.MaxHeaderBytes != 0 {
+		return s.MaxHeaderBytes
+	}
+	return DefaultMaxHeaderBytes
 }
 
 // recordFrameReadTimeout increments gonacos_grpc_frame_read_timeouts_total
@@ -451,10 +493,20 @@ func (s *Server) ServeTLSConfig(ln net.Listener, cfg *tls.Config) error {
 // applied as-is. Lowering it tightens the per-connection blast radius
 // when a peer opens many in-flight streams.
 //
+// MaxHeaderBytes is always set on the http.Server (the http2 stack reads
+// it via http2serverConn.maxHeaderListSize()): a negative config leaves
+// http.Server.MaxHeaderBytes at zero (Go then applies its own 1 MiB
+// default), zero falls back to DefaultMaxHeaderBytes (1 MiB), any
+// positive value is applied as-is. This is the header-bomb defense:
+// HPACK compression lets a small frame decompress into gigabytes of
+// decoded header data, and without a cap a peer can drive the process
+// into OOM before the handler runs.
+//
 // ConfigureServer is a no-op when the http.Server already has an http2 conf
 // attached, so calling it on a server that was previously configured is
 // safe.
 func (s *Server) configureHTTP2(srv *http.Server) {
+	srv.MaxHeaderBytes = s.maxHeaderBytes()
 	h2s := &http2.Server{
 		IdleTimeout:          srv.IdleTimeout,
 		MaxConcurrentStreams: uint32(s.maxConcurrentStreams()),

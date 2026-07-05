@@ -114,3 +114,46 @@ func TestServerWriteByteTimeoutDefaultIsZero(t *testing.T) {
 		t.Errorf("default WriteByteTimeout = %v, want 0", srv.WriteByteTimeout)
 	}
 }
+
+// TestServerMaxHeaderBytesConfigured verifies that an explicit
+// MaxHeaderBytes value is returned by maxHeaderBytes() so a peer
+// cannot exploit HPACK compression to decompress a small header block
+// into gigabytes of decoded header data. configureHTTP2 propagates
+// this to the underlying http.Server (the http2 stack reads it via
+// http2serverConn.maxHeaderListSize()).
+func TestServerMaxHeaderBytesConfigured(t *testing.T) {
+	const want = 64 * 1024
+	srv := NewServer()
+	srv.MaxHeaderBytes = want
+	if got := srv.maxHeaderBytes(); got != want {
+		t.Errorf("maxHeaderBytes() = %d, want %d", got, want)
+	}
+}
+
+// TestServerMaxHeaderBytesDefault verifies that a zero MaxHeaderBytes
+// config falls back to DefaultMaxHeaderBytes (1 MiB), matching Go's
+// net/http default and Envoy's max_request_headers_kb. Operators who
+// don't tune the limit get a sane header-bomb defense default.
+func TestServerMaxHeaderBytesDefault(t *testing.T) {
+	srv := NewServer()
+	if got := srv.maxHeaderBytes(); got != DefaultMaxHeaderBytes {
+		t.Errorf("maxHeaderBytes() = %d, want default %d", got, DefaultMaxHeaderBytes)
+	}
+	if DefaultMaxHeaderBytes != 1<<20 {
+		t.Errorf("DefaultMaxHeaderBytes = %d, want %d", DefaultMaxHeaderBytes, 1<<20)
+	}
+}
+
+// TestServerMaxHeaderBytesNegativeDisablesCap verifies that a negative
+// MaxHeaderBytes disables the cap — maxHeaderBytes() returns 0,
+// letting Go's net/http apply its own 1 MiB default via
+// http.Server.MaxHeaderBytes. This is the operator opt-out path (not
+// recommended — the explicit zero makes the cap invisible to operators
+// reading the config).
+func TestServerMaxHeaderBytesNegativeDisablesCap(t *testing.T) {
+	srv := NewServer()
+	srv.MaxHeaderBytes = -1
+	if got := srv.maxHeaderBytes(); got != 0 {
+		t.Errorf("maxHeaderBytes() = %d, want 0 (disabled)", got)
+	}
+}

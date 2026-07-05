@@ -155,6 +155,20 @@ type options struct {
 	// back to GONACOS_GRPC_WRITE_BYTE_TIMEOUT env var.
 	GRPCWriteByteTimeout time.Duration
 
+	// GRPCMaxHeaderBytes caps the total size of decoded HTTP/2 headers
+	// the gRPC server accepts on a single request. Zero falls back to
+	// 1 MiB (matching Go's net/http DefaultMaxHeaderBytes and Envoy's
+	// max_request_headers_kb; generous for legitimate Nacos SDK traffic
+	// — typical headers are <1 KB). Negative disables the explicit cap
+	// (Go's http2 stack then applies its own 1 MiB default; not
+	// recommended — the explicit zero makes the cap invisible to
+	// operators reading the config). This is the header-bomb defense:
+	// HPACK lets a 4 KB compressed frame decompress to 1 GiB of decoded
+	// header data, so without a cap a single malicious request can
+	// exhaust memory before the handler runs. Falls back to the
+	// GONACOS_GRPC_MAX_HEADER_BYTES env var.
+	GRPCMaxHeaderBytes int
+
 	// MaxConns caps the total number of concurrent TCP connections the
 	// HTTP and gRPC servers accept. Zero falls back to resolveMaxConns
 	// (10000 default). A negative value disables the cap. When the cap is
@@ -674,6 +688,22 @@ func WithGRPCWriteByteTimeout(d time.Duration) Option {
 	return func(o *options) { o.GRPCWriteByteTimeout = d }
 }
 
+// WithGRPCMaxHeaderBytes caps the total size of decoded HTTP/2 headers
+// the gRPC server accepts on a single request. Zero falls back to 1 MiB
+// (matching Go's net/http DefaultMaxHeaderBytes and Envoy's
+// max_request_headers_kb; generous for legitimate Nacos SDK traffic —
+// typical headers are <1 KB). Negative disables the explicit cap (Go's
+// http2 stack then applies its own 1 MiB default; not recommended —
+// the explicit zero makes the cap invisible to operators reading the
+// config). This is the header-bomb defense: HPACK lets a 4 KB
+// compressed frame decompress to 1 GiB of decoded header data, so
+// without a cap a single malicious request can exhaust memory before
+// the handler runs. Falls back to the GONACOS_GRPC_MAX_HEADER_BYTES
+// env var.
+func WithGRPCMaxHeaderBytes(n int) Option {
+	return func(o *options) { o.GRPCMaxHeaderBytes = n }
+}
+
 func (o *options) resolveAddr() string {
 	if o.Addr != "" {
 		return o.Addr
@@ -1179,6 +1209,28 @@ func (o *options) resolveGRPCWriteByteTimeout() time.Duration {
 		}
 	}
 	return 0
+}
+
+// resolveGRPCMaxHeaderBytes returns the per-request decoded HTTP/2
+// header size cap for the gRPC server. Defaults to 1 MiB (matching
+// Go's net/http DefaultMaxHeaderBytes and Envoy's
+// max_request_headers_kb; generous for legitimate Nacos SDK traffic
+// — typical headers are <1 KB). A negative value is propagated as-is
+// to grpcSrv.MaxHeaderBytes, where grpc.Server.maxHeaderBytes()
+// translates it to 0 — Go's http2 stack then applies its own 1 MiB
+// default (not recommended — the explicit zero makes the cap
+// invisible to operators reading the config). Falls back to
+// GONACOS_GRPC_MAX_HEADER_BYTES env var.
+func (o *options) resolveGRPCMaxHeaderBytes() int {
+	if o.GRPCMaxHeaderBytes != 0 {
+		return o.GRPCMaxHeaderBytes
+	}
+	if v := os.Getenv("GONACOS_GRPC_MAX_HEADER_BYTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n != 0 {
+			return n
+		}
+	}
+	return 1 << 20
 }
 
 // resolveMaxConns returns the concurrent-connection cap. Defaults to 10000

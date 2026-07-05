@@ -164,10 +164,14 @@ func (h authHandler) createRole(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.CreateRole(formValue(r, "role"), formValue(r, "username")); err != nil {
+	role := formValue(r, "role")
+	username := formValue(r, "username")
+	if err := h.service.CreateRole(role, username); err != nil {
+		auditLog(h.audit, r, AuditActionRoleCreate, role, err.Error(), AuditResultFailure)
 		writeAuthError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionRoleCreate, role, "user="+username, AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, "add role ok!")
 }
 
@@ -175,10 +179,14 @@ func (h authHandler) deleteRole(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.DeleteRole(formValue(r, "role"), formValue(r, "username")); err != nil {
+	role := formValue(r, "role")
+	username := formValue(r, "username")
+	if err := h.service.DeleteRole(role, username); err != nil {
+		auditLog(h.audit, r, AuditActionRoleDelete, role, err.Error(), AuditResultFailure)
 		writeAuthError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionRoleDelete, role, "user="+username, AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, "delete role ok!")
 }
 
@@ -216,10 +224,15 @@ func (h authHandler) createPermission(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.CreatePermission(formValue(r, "role"), formValue(r, "resource"), formValue(r, "action")); err != nil {
+	role := formValue(r, "role")
+	resource := formValue(r, "resource")
+	action := formValue(r, "action")
+	if err := h.service.CreatePermission(role, resource, action); err != nil {
+		auditLog(h.audit, r, AuditActionPermissionCreate, role, err.Error(), AuditResultFailure)
 		writeAuthError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionPermissionCreate, role, "resource="+resource+" action="+action, AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, "add permission ok!")
 }
 
@@ -227,10 +240,15 @@ func (h authHandler) deletePermission(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.DeletePermission(formValue(r, "role"), formValue(r, "resource"), formValue(r, "action")); err != nil {
+	role := formValue(r, "role")
+	resource := formValue(r, "resource")
+	action := formValue(r, "action")
+	if err := h.service.DeletePermission(role, resource, action); err != nil {
+		auditLog(h.audit, r, AuditActionPermissionDelete, role, err.Error(), AuditResultFailure)
 		writeAuthError(w, err)
 		return
 	}
+	auditLog(h.audit, r, AuditActionPermissionDelete, role, "resource="+resource+" action="+action, AuditResultSuccess)
 	protocol.WriteResult(w, http.StatusOK, "delete permission ok!")
 }
 

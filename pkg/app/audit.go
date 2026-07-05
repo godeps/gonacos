@@ -10,20 +10,22 @@ import (
 type AuditAction string
 
 const (
-	AuditActionLogin           AuditAction = "login"
-	AuditActionLoginFailed     AuditAction = "login_failed"
-	AuditActionUserCreate      AuditAction = "user_create"
-	AuditActionUserDelete      AuditAction = "user_delete"
-	AuditActionUserUpdate      AuditAction = "user_update"
-	AuditActionRoleCreate      AuditAction = "role_create"
-	AuditActionRoleDelete      AuditAction = "role_delete"
-	AuditActionNamespaceCreate AuditAction = "namespace_create"
-	AuditActionNamespaceUpdate AuditAction = "namespace_update"
-	AuditActionNamespaceDelete AuditAction = "namespace_delete"
-	AuditActionConfigPublish   AuditAction = "config_publish"
-	AuditActionConfigDelete    AuditAction = "config_delete"
-	AuditActionBackup          AuditAction = "backup"
-	AuditActionRestore         AuditAction = "restore"
+	AuditActionLogin            AuditAction = "login"
+	AuditActionLoginFailed      AuditAction = "login_failed"
+	AuditActionUserCreate       AuditAction = "user_create"
+	AuditActionUserDelete       AuditAction = "user_delete"
+	AuditActionUserUpdate       AuditAction = "user_update"
+	AuditActionRoleCreate       AuditAction = "role_create"
+	AuditActionRoleDelete       AuditAction = "role_delete"
+	AuditActionPermissionCreate AuditAction = "permission_create"
+	AuditActionPermissionDelete AuditAction = "permission_delete"
+	AuditActionNamespaceCreate  AuditAction = "namespace_create"
+	AuditActionNamespaceUpdate  AuditAction = "namespace_update"
+	AuditActionNamespaceDelete  AuditAction = "namespace_delete"
+	AuditActionConfigPublish    AuditAction = "config_publish"
+	AuditActionConfigDelete     AuditAction = "config_delete"
+	AuditActionBackup           AuditAction = "backup"
+	AuditActionRestore          AuditAction = "restore"
 )
 
 // AuditResult is the outcome of an auditable event.

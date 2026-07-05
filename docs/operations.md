@@ -55,6 +55,12 @@ configs per namespace by default). HTTP-level limits protect against abuse:
   complete before forcibly closing connections. Prevents a stuck handler
   from blocking a rolling restart indefinitely. Set to `-1` to wait
   forever (not recommended in production).
+- **gRPC frame size cap** (`GONACOS_GRPC_MAX_FRAME_BYTES`, default 4 MiB):
+  the maximum payload size of a single gRPC frame the server accepts. A
+  peer declaring a larger frame is rejected with `RESOURCE_EXHAUSTED`
+  (gRPC status 8) before any body allocation, so a malicious client
+  cannot drive the process into OOM by claiming a 4 GiB body. Set to
+  `-1` to disable the cap (not recommended in production).
 
 Operators running in production should monitor memory via the `/metrics`
 endpoint and restart the process if heap usage approaches the cgroup limit.

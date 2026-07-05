@@ -55,6 +55,13 @@ type options struct {
 	// value disables the timeout (wait forever — not recommended in
 	// production, as a stuck handler would block shutdown indefinitely).
 	ShutdownTimeout time.Duration
+
+	// GRPCMaxFrameBytes caps the payload size of a single gRPC frame the
+	// server accepts from a peer. Zero falls back to the gRPC default
+	// (4 MiB). A negative value disables the cap (not recommended — a
+	// malicious peer can claim a 4 GiB body and drive the process into
+	// OOM before the handler runs).
+	GRPCMaxFrameBytes int
 }
 
 // Option configures a Server at construction time. Pass to [New].
@@ -215,6 +222,16 @@ func WithSnapshotBackupCount(n int) Option {
 // production).
 func WithShutdownTimeout(d time.Duration) Option {
 	return func(o *options) { o.ShutdownTimeout = d }
+}
+
+// WithGRPCMaxFrameBytes caps the payload size of a single gRPC frame the
+// server accepts from a peer. The default is 4 MiB (matching the standard
+// gRPC client default). A request declaring a larger frame is rejected with
+// RESOURCE_EXHAUSTED before the body is read, so a malicious peer cannot
+// drive the process into OOM by claiming a 4 GiB body. Pass a negative value
+// to disable the cap (not recommended in production).
+func WithGRPCMaxFrameBytes(bytes int) Option {
+	return func(o *options) { o.GRPCMaxFrameBytes = bytes }
 }
 
 func (o *options) resolveAddr() string {
@@ -468,6 +485,21 @@ func (o *options) resolveShutdownTimeout() time.Duration {
 		}
 	}
 	return 30 * time.Second
+}
+
+// resolveGRPCMaxFrameBytes returns the per-gRPC-frame size cap. Defaults to
+// 4 MiB (matching the standard gRPC client default). A negative return value
+// disables the cap.
+func (o *options) resolveGRPCMaxFrameBytes() int {
+	if o.GRPCMaxFrameBytes != 0 {
+		return o.GRPCMaxFrameBytes
+	}
+	if v := os.Getenv("GONACOS_GRPC_MAX_FRAME_BYTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n != 0 {
+			return n
+		}
+	}
+	return 4 * 1024 * 1024
 }
 
 // splitHostPort splits an address into host and port. Returns "127.0.0.1" and

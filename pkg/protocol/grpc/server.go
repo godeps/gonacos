@@ -70,6 +70,13 @@ type Server struct {
 	server   *http.Server
 	listener net.Listener
 
+	// MaxFrameBytes caps the payload size of a single gRPC frame the server
+	// will accept from a peer. Zero falls back to [DefaultMaxFrameBytes].
+	// Set to a negative value to disable the cap (not recommended — a
+	// malicious peer can claim a 4 GiB body and drive the process into OOM
+	// before the handler runs).
+	MaxFrameBytes int
+
 	// Logf, when non-nil, is called for diagnostic messages (currently
 	// panic recovery). When nil, panics are still recovered but not logged.
 	Logf func(format string, args ...any)
@@ -82,6 +89,15 @@ func NewServer() *Server {
 		stream:   map[string]StreamHandler{},
 		bistream: map[string]BiStreamHandler{},
 	}
+}
+
+// maxFrameBytes returns the configured per-frame size cap, falling back to
+// DefaultMaxFrameBytes when unset. A negative value disables the cap.
+func (s *Server) maxFrameBytes() int {
+	if s.MaxFrameBytes != 0 {
+		return s.MaxFrameBytes
+	}
+	return DefaultMaxFrameBytes
 }
 
 // RegisterUnary registers a handler for the Request service.
@@ -270,9 +286,13 @@ func formatGRPCDuration(d time.Duration) string {
 
 func (s *Server) handleUnary(ctx context.Context, w http.ResponseWriter, r *http.Request, h Handler) {
 	defer recoverGRPC(s, w, nil, r)
-	frame, err := ReadFrame(r.Body)
+	frame, err := ReadFrameWithLimit(r.Body, s.maxFrameBytes())
 	if err != nil && !errors.Is(err, io.EOF) {
-		writeGRPCStatus(w, StatusInternal, "read frame: "+err.Error())
+		code := StatusInternal
+		if errors.Is(err, ErrFrameTooLarge) {
+			code = StatusResourceExhausted
+		}
+		writeGRPCStatus(w, code, "read frame: "+err.Error())
 		return
 	}
 	req, err := DecodePayload(frame.Payload)
@@ -300,9 +320,13 @@ func (s *Server) handleStream(ctx context.Context, w http.ResponseWriter, r *htt
 			tryStreamStatus(w, StatusInternal, "internal server error")
 		}
 	}()
-	frame, err := ReadFrame(r.Body)
+	frame, err := ReadFrameWithLimit(r.Body, s.maxFrameBytes())
 	if err != nil && !errors.Is(err, io.EOF) {
-		writeGRPCStatus(w, StatusInternal, "read frame: "+err.Error())
+		code := StatusInternal
+		if errors.Is(err, ErrFrameTooLarge) {
+			code = StatusResourceExhausted
+		}
+		writeGRPCStatus(w, code, "read frame: "+err.Error())
 		return
 	}
 	req, err := DecodePayload(frame.Payload)
@@ -351,7 +375,7 @@ func (s *Server) handleBiStream(ctx context.Context, w http.ResponseWriter, r *h
 	flusher.Flush()
 
 	recv := func() (Payload, error) {
-		frame, err := ReadFrame(r.Body)
+		frame, err := ReadFrameWithLimit(r.Body, s.maxFrameBytes())
 		if err != nil {
 			return Payload{}, err
 		}

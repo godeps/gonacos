@@ -295,3 +295,46 @@ func encodeGRPCRequestBody(p Payload) []byte {
 	_ = WriteFrame(&buf, frame)
 	return buf.Bytes()
 }
+
+// TestServerRejectsOversizedFrame verifies that a peer claiming a 1 GiB
+// frame body gets RESOURCE_EXHAUSTED without the server allocating any
+// memory for the body. The frame header declares length=1 GiB but the
+// request body stops short — the server must reject before reading body.
+func TestServerRejectsOversizedFrame(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	srv.MaxFrameBytes = 4 * 1024 * 1024
+	srv.RegisterUnary("Request/request", func(ctx context.Context, req Payload) (Payload, error) {
+		return Payload{Metadata: Metadata{Type: "TestResponse"}}, nil
+	})
+	go func() { _ = srv.ListenAndServe("127.0.0.1:0") }()
+	for i := 0; i < 50 && srv.Addr() == nil; i++ {
+		time.Sleep(2 * time.Millisecond)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	// Build a 5-byte frame header that claims a 1 GiB body, then send
+	// nothing else. The server must reject without waiting for body bytes.
+	header := make([]byte, 5)
+	header[1] = 0x40 // length = 1 << 30 = 1 GiB
+	resp, err := http.Post(
+		"http://"+srv.Addr().String()+"/Request/request",
+		"application/grpc",
+		bytes.NewReader(header),
+	)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("HTTP status = %d, want 200 (gRPC status conveyed via header)", resp.StatusCode)
+	}
+	// gRPC status 8 = RESOURCE_EXHAUSTED.
+	if resp.Header.Get("grpc-status") != "8" {
+		t.Fatalf("grpc-status = %v, want 8 (RESOURCE_EXHAUSTED)", resp.Header.Get("grpc-status"))
+	}
+}

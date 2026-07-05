@@ -3,6 +3,7 @@ package grpc
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -89,6 +90,41 @@ func TestFrameRoundtrip(t *testing.T) {
 	}
 	if !bytes.Equal(decoded.Payload, original.Payload) {
 		t.Fatalf("payload = %x", decoded.Payload)
+	}
+}
+
+// TestReadFrameRejectsOversizedFrame verifies that a frame whose declared
+// length exceeds the limit is rejected before any body allocation — a
+// malicious peer claiming a 1 GiB body must not drive the process into OOM.
+func TestReadFrameRejectsOversizedFrame(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	// Header: compressed=false, length=1 GiB (no body follows).
+	header := make([]byte, 5)
+	header[1] = 0x40 // 1 << 30 = 1 GiB
+	buf.Write(header)
+
+	_, err := ReadFrameWithLimit(&buf, 4*1024*1024)
+	if !errors.Is(err, ErrFrameTooLarge) {
+		t.Fatalf("err = %v, want ErrFrameTooLarge", err)
+	}
+}
+
+// TestReadFrameWithinLimit verifies that a frame at the boundary of the
+// limit is accepted.
+func TestReadFrameWithinLimit(t *testing.T) {
+	t.Parallel()
+	payload := bytes.Repeat([]byte("x"), 100)
+	var buf bytes.Buffer
+	if err := WriteFrame(&buf, Frame{Payload: payload}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	decoded, err := ReadFrameWithLimit(&buf, 100)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !bytes.Equal(decoded.Payload, payload) {
+		t.Fatalf("payload mismatch")
 	}
 }
 

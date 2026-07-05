@@ -31,6 +31,20 @@ const (
 // ErrProto is returned when the protobuf stream is malformed.
 var ErrProto = errors.New("protobuf: malformed input")
 
+// DefaultMaxFrameBytes is the default cap on a single gRPC frame's payload
+// length. Matches the standard gRPC client default of 4 MiB. A frame whose
+// declared length exceeds this is rejected before any allocation, so a
+// malicious peer cannot drive the server into OOM by claiming a 4 GiB body.
+// Override per-server via [Server.MaxFrameBytes] (or the package-level
+// [SetDefaultMaxFrameBytes] for the embedded default server).
+const DefaultMaxFrameBytes = 4 * 1024 * 1024
+
+// ErrFrameTooLarge is returned by ReadFrame when the peer declares a frame
+// payload larger than the configured limit. The connection is in an
+// unrecoverable state after this — the reader has not consumed the body — so
+// the server closes it.
+var ErrFrameTooLarge = errors.New("grpc: frame too large")
+
 // ProtoReader wraps a byte slice for sequential protobuf field reads.
 type ProtoReader struct {
 	buf []byte
@@ -354,8 +368,22 @@ type Frame struct {
 	Payload    []byte
 }
 
-// ReadFrame reads one gRPC frame from r.
+// ReadFrame reads one gRPC frame from r. It enforces the per-frame size
+// limit, rejecting oversized frames before allocating memory for the body.
+// The limit defaults to [DefaultMaxFrameBytes]; callers wanting a different
+// limit should use [ReadFrameWithLimit].
 func ReadFrame(r io.Reader) (Frame, error) {
+	return ReadFrameWithLimit(r, DefaultMaxFrameBytes)
+}
+
+// ReadFrameWithLimit reads one gRPC frame from r, rejecting frames whose
+// declared payload length exceeds maxBytes. A negative or zero maxBytes is
+// treated as unlimited (use with caution — a malicious peer can drive the
+// process into OOM by claiming a 4 GiB body).
+//
+// On error the reader is left in an unspecified state; callers should close
+// the connection rather than trying to recover framing.
+func ReadFrameWithLimit(r io.Reader, maxBytes int) (Frame, error) {
 	header := make([]byte, 5)
 	if _, err := io.ReadFull(r, header); err != nil {
 		return Frame{}, err
@@ -364,6 +392,9 @@ func ReadFrame(r io.Reader) (Frame, error) {
 	length := int(header[1])<<24 | int(header[2])<<16 | int(header[3])<<8 | int(header[4])
 	if length < 0 {
 		return Frame{}, ErrProto
+	}
+	if maxBytes > 0 && length > maxBytes {
+		return Frame{}, ErrFrameTooLarge
 	}
 	body := make([]byte, length)
 	if _, err := io.ReadFull(r, body); err != nil {

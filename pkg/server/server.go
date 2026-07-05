@@ -112,6 +112,10 @@ func New(opts ...Option) (*Server, error) {
 	grpcSrv.Logf = func(format string, args ...any) {
 		logger.Warnf(format, args...)
 	}
+	// Cap the per-frame payload size so a malicious peer cannot drive the
+	// process into OOM by claiming a 4 GiB body. Negative means unlimited
+	// (operator opted out — not recommended in production).
+	grpcSrv.MaxFrameBytes = o.resolveGRPCMaxFrameBytes()
 
 	// Readiness checker: ping the Redis client (external or embedded).
 	// Returns 503 when Redis is unreachable so load balancers stop sending

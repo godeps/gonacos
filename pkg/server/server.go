@@ -85,7 +85,16 @@ func New(opts ...Option) (*Server, error) {
 	var redisClient *redis.Client
 	dumpPath := ""
 	if redisAddr != "" {
-		redisClient = redis.NewClient(&redis.Options{Addr: redisAddr})
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:            redisAddr,
+			PoolSize:        o.resolveRedisPoolSize(),
+			MinIdleConns:    o.resolveRedisMinIdleConns(),
+			DialTimeout:     o.resolveRedisDialTimeout(),
+			ReadTimeout:     o.resolveRedisReadTimeout(),
+			WriteTimeout:    o.resolveRedisWriteTimeout(),
+			PoolTimeout:     o.resolveRedisPoolTimeout(),
+			ConnMaxLifetime: o.resolveRedisMaxConnAge(),
+		})
 	} else {
 		er, err := store.StartEmbedded()
 		if err != nil {

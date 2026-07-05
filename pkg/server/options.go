@@ -25,6 +25,20 @@ type options struct {
 	Logger           Logger
 	StrictSnapshot   bool
 
+	// Redis connection pool. Zero values fall back to safe production
+	// defaults resolved in [options.resolveRedisPool*]. The defaults are
+	// tuned for a gonacos process serving hundreds of concurrent SDK
+	// clients — PoolSize 50, MinIdleConns 5, DialTimeout 5s, ReadTimeout
+	// 3s, WriteTimeout 3s, PoolTimeout 4s, MaxConnAge 30m. Override via
+	// the WithRedis* options or GONACOS_REDIS_* env vars.
+	RedisPoolSize     int
+	RedisMinIdleConns int
+	RedisDialTimeout  time.Duration
+	RedisReadTimeout  time.Duration
+	RedisWriteTimeout time.Duration
+	RedisPoolTimeout  time.Duration
+	RedisMaxConnAge   time.Duration
+
 	// HTTP production hardening. Zero values fall back to safe defaults
 	// resolved in [options.resolveHTTP*].
 	HTTPRateRPS      float64
@@ -144,6 +158,60 @@ func WithGRPCAddr(addr string) Option {
 // the external Redis and enables cross-node sync.
 func WithRedisAddr(addr string) Option {
 	return func(o *options) { o.RedisAddr = addr }
+}
+
+// WithRedisPoolSize sets the maximum number of socket connections to Redis.
+// Default 50 — enough for a gonacos process serving hundreds of concurrent
+// SDK clients. Set higher if the metrics show connection-pool exhaustion
+// (gonacos_redis_pool_* — future). Set lower for resource-constrained
+// embedded deployments.
+func WithRedisPoolSize(n int) Option {
+	return func(o *options) { o.RedisPoolSize = n }
+}
+
+// WithRedisMinIdleConns sets the minimum number of idle connections the
+// pool keeps warm. Default 5 — eliminates cold-start latency on the first
+// few requests after a pause. Set to 0 to disable (let the pool start
+// empty and grow on demand).
+func WithRedisMinIdleConns(n int) Option {
+	return func(o *options) { o.RedisMinIdleConns = n }
+}
+
+// WithRedisDialTimeout sets the timeout for establishing a new Redis
+// connection. Default 5s — long enough to survive a transient network
+// blip, short enough that a down Redis doesn't hang the startup path.
+func WithRedisDialTimeout(d time.Duration) Option {
+	return func(o *options) { o.RedisDialTimeout = d }
+}
+
+// WithRedisReadTimeout sets the timeout for a single Redis command's
+// response. Default 3s — Redis commands should be sub-millisecond; 3s is
+// a generous ceiling that catches a stuck Redis without false-positiving
+// on a slow GC pause.
+func WithRedisReadTimeout(d time.Duration) Option {
+	return func(o *options) { o.RedisReadTimeout = d }
+}
+
+// WithRedisWriteTimeout sets the timeout for sending a command to Redis.
+// Default 3s. Set higher for high-latency links to a remote Redis.
+func WithRedisWriteTimeout(d time.Duration) Option {
+	return func(o *options) { o.RedisWriteTimeout = d }
+}
+
+// WithRedisPoolTimeout sets the maximum time to wait for a connection from
+// the pool when all connections are in use. Default 4s — slightly longer
+// than ReadTimeout so a pool-exhaustion event surfaces as a ReadTimeout
+// rather than a misleading PoolTimeout.
+func WithRedisPoolTimeout(d time.Duration) Option {
+	return func(o *options) { o.RedisPoolTimeout = d }
+}
+
+// WithRedisMaxConnAge sets the maximum age of a connection before it's
+// recycled. Default 30m — catches connections that have gone stale due to
+// an intermediate proxy (e.g., HAProxy's default 1h idle timeout) without
+// churning the pool. Set to 0 to disable (connections live forever).
+func WithRedisMaxConnAge(d time.Duration) Option {
+	return func(o *options) { o.RedisMaxConnAge = d }
 }
 
 // WithDataDir sets the directory for the embedded Redis disk dump
@@ -396,6 +464,104 @@ func (o *options) resolveRedisAddr() string {
 		return o.RedisAddr
 	}
 	return os.Getenv("GONACOS_REDIS_ADDR")
+}
+
+// resolveRedisPoolSize returns the configured pool size or the default 50.
+// GONACOS_REDIS_POOL_SIZE env var overrides when the option is unset.
+func (o *options) resolveRedisPoolSize() int {
+	if o.RedisPoolSize > 0 {
+		return o.RedisPoolSize
+	}
+	if v := os.Getenv("GONACOS_REDIS_POOL_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 50
+}
+
+// resolveRedisMinIdleConns returns the configured min idle conns or the
+// default 5.
+func (o *options) resolveRedisMinIdleConns() int {
+	if o.RedisMinIdleConns > 0 {
+		return o.RedisMinIdleConns
+	}
+	if v := os.Getenv("GONACOS_REDIS_MIN_IDLE_CONNS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return n
+		}
+	}
+	return 5
+}
+
+// resolveRedisDialTimeout returns the configured dial timeout or the
+// default 5s.
+func (o *options) resolveRedisDialTimeout() time.Duration {
+	if o.RedisDialTimeout > 0 {
+		return o.RedisDialTimeout
+	}
+	if v := os.Getenv("GONACOS_REDIS_DIAL_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 5 * time.Second
+}
+
+// resolveRedisReadTimeout returns the configured read timeout or the
+// default 3s.
+func (o *options) resolveRedisReadTimeout() time.Duration {
+	if o.RedisReadTimeout > 0 {
+		return o.RedisReadTimeout
+	}
+	if v := os.Getenv("GONACOS_REDIS_READ_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 3 * time.Second
+}
+
+// resolveRedisWriteTimeout returns the configured write timeout or the
+// default 3s.
+func (o *options) resolveRedisWriteTimeout() time.Duration {
+	if o.RedisWriteTimeout > 0 {
+		return o.RedisWriteTimeout
+	}
+	if v := os.Getenv("GONACOS_REDIS_WRITE_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 3 * time.Second
+}
+
+// resolveRedisPoolTimeout returns the configured pool timeout or the
+// default 4s.
+func (o *options) resolveRedisPoolTimeout() time.Duration {
+	if o.RedisPoolTimeout > 0 {
+		return o.RedisPoolTimeout
+	}
+	if v := os.Getenv("GONACOS_REDIS_POOL_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 4 * time.Second
+}
+
+// resolveRedisMaxConnAge returns the configured max conn age or the
+// default 30m. Zero or negative disables (connections live forever).
+func (o *options) resolveRedisMaxConnAge() time.Duration {
+	if o.RedisMaxConnAge != 0 {
+		return o.RedisMaxConnAge
+	}
+	if v := os.Getenv("GONACOS_REDIS_MAX_CONN_AGE"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return 30 * time.Minute
 }
 
 func (o *options) resolveDataDir() string {

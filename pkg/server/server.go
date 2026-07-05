@@ -117,6 +117,10 @@ func New(opts ...Option) (*Server, error) {
 	// process into OOM by claiming a 4 GiB body. Negative means unlimited
 	// (operator opted out — not recommended in production).
 	grpcSrv.MaxFrameBytes = o.resolveGRPCMaxFrameBytes()
+	// HTTP/2 keepalive PINGs detect half-open connections (client crashed
+	// without sending FIN) so the server doesn't hold a goroutine + fd
+	// alive indefinitely. Disabled when ReadIdleTimeout <= 0.
+	grpcSrv.KeepAlive = o.resolveGRPCKeepAlive()
 	// Wire the same metrics registry into the gRPC server so
 	// gonacos_grpc_requests_total is exposed under /metrics alongside the
 	// HTTP and process metrics. A single scrape captures everything.

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/http2"
 )
 
 // Status codes matching gRPC's codes.Code.
@@ -134,6 +136,36 @@ type Server struct {
 	// Logf, when non-nil, is called for diagnostic messages (currently
 	// panic recovery). When nil, panics are still recovered but not logged.
 	Logf func(format string, args ...any)
+
+	// KeepAlive configures HTTP/2 PING-based liveness detection on the
+	// underlying http2.Server. When ReadIdleTimeout > 0, the server sends
+	// a PING after that many seconds of connection silence; if no PING ack
+	// arrives within PingTimeout, the connection is closed. This catches
+	// half-open connections (client crashed but the TCP stack has not
+	// noticed) that would otherwise consume a goroutine + file descriptor
+	// indefinitely. Recommended production: ReadIdleTimeout=15s,
+	// PingTimeout=15s. Zero values disable PINGs (legacy behavior) —
+	// connections then rely solely on IdleTimeout, which cannot detect a
+	// dead peer.
+	KeepAlive KeepAliveConfig
+}
+
+// KeepAliveConfig configures HTTP/2 keepalive PINGs. Zero values disable the
+// corresponding behavior.
+type KeepAliveConfig struct {
+	// ReadIdleTimeout is the duration of connection silence after which
+	// the server sends an HTTP/2 PING to check the peer is still alive.
+	// If zero, no PINGs are sent (legacy behavior). 15s is a reasonable
+	// production default — frequent enough to catch dead peers within
+	// half a minute, infrequent enough not to add measurable load.
+	ReadIdleTimeout time.Duration
+
+	// PingTimeout is how long the server waits for a PING ack before
+	// closing the connection. Defaults to 15s when zero and
+	// ReadIdleTimeout > 0. Should be >= the round-trip time to the
+	// slowest legitimate client; too low will close healthy connections
+	// across high-latency links.
+	PingTimeout time.Duration
 }
 
 // CounterMetric is the subset of the observability.Counter interface the
@@ -216,6 +248,7 @@ func (s *Server) Serve(ln net.Listener) error {
 		ReadHeaderTimeout: 5 * time.Second,
 		Protocols:         protocols,
 	}
+	s.configureHTTP2(s.server)
 	s.mu.Unlock()
 	return s.server.Serve(ln)
 }
@@ -244,8 +277,34 @@ func (s *Server) ServeTLS(ln net.Listener, certFile, keyFile string) error {
 		IdleTimeout:       5 * time.Minute,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	s.configureHTTP2(s.server)
 	s.mu.Unlock()
 	return s.server.ServeTLS(ln, certFile, keyFile)
+}
+
+// configureHTTP2 wires [Server.KeepAlive] into the http.Server's HTTP/2
+// transport. Called under s.mu. When ReadIdleTimeout > 0, the http2 server
+// sends a PING after that duration of silence and closes the connection if
+// no ack arrives within PingTimeout (defaulting to 15s). This catches
+// half-open connections — a client that crashed without sending a FIN keeps
+// its server-side goroutine + file descriptor alive indefinitely without
+// PINGs, since TCP only learns the peer is gone when it tries to write.
+//
+// ConfigureServer is a no-op when the http.Server already has an http2 conf
+// attached, so calling it on a server that was previously configured is
+// safe.
+func (s *Server) configureHTTP2(srv *http.Server) {
+	if s.KeepAlive.ReadIdleTimeout <= 0 {
+		return
+	}
+	h2s := &http2.Server{
+		IdleTimeout:     srv.IdleTimeout,
+		ReadIdleTimeout: s.KeepAlive.ReadIdleTimeout,
+	}
+	if s.KeepAlive.PingTimeout > 0 {
+		h2s.PingTimeout = s.KeepAlive.PingTimeout
+	}
+	_ = http2.ConfigureServer(srv, h2s)
 }
 
 // Shutdown gracefully stops the server.

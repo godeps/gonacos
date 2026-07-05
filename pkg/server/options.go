@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/godeps/gonacos/pkg/app"
+	grpcsrv "github.com/godeps/gonacos/pkg/protocol/grpc"
 )
 
 type options struct {
@@ -63,6 +64,16 @@ type options struct {
 	// OOM before the handler runs).
 	GRPCMaxFrameBytes int
 
+	// GRPCKeepAlive configures HTTP/2 PING-based liveness detection on the
+	// gRPC server. When ReadIdleTimeout > 0, the server sends a PING after
+	// that duration of connection silence; if no ack arrives within
+	// PingTimeout, the connection is closed. Catches half-open connections
+	// (client crashed without FIN) that would otherwise hold a goroutine +
+	// fd indefinitely. Zero values disable PINGs (legacy behavior). Falls
+	// back to GONACOS_GRPC_KEEPALIVE_READ_IDLE and
+	// GONACOS_GRPC_KEEPALIVE_PING_TIMEOUT env vars.
+	GRPCKeepAlive GRPCKeepAliveConfig
+
 	// MaxConns caps the total number of concurrent TCP connections the
 	// HTTP and gRPC servers accept. Zero falls back to resolveMaxConns
 	// (10000 default). A negative value disables the cap. When the cap is
@@ -85,6 +96,14 @@ type options struct {
 	// Production deployments should set a token to avoid leaking process
 	// and business metrics to unauthenticated callers.
 	MetricsToken string
+}
+
+// GRPCKeepAliveConfig mirrors the gRPC server's keepalive config without
+// pulling the grpc package into options.go. Converted in [Server.New] via
+// [options.resolveGRPCKeepAlive].
+type GRPCKeepAliveConfig struct {
+	ReadIdleTimeout time.Duration
+	PingTimeout     time.Duration
 }
 
 // Option configures a Server at construction time. Pass to [New].
@@ -290,6 +309,23 @@ func WithLogLevel(level LogLevel) Option {
 // Falls back to the GONACOS_METRICS_TOKEN env var.
 func WithMetricsToken(token string) Option {
 	return func(o *options) { o.MetricsToken = token }
+}
+
+// WithGRPCKeepAlive enables HTTP/2 PING-based liveness detection on the gRPC
+// server. After readIdle seconds of connection silence, the server sends a
+// PING; if no ack arrives within pingTimeout, the connection is closed.
+// Catches half-open connections (client crashed without FIN) that would
+// otherwise hold a goroutine + fd indefinitely. Recommended production:
+// readIdle=15s, pingTimeout=15s. Pass readIdle=0 to disable (default).
+// Falls back to the GONACOS_GRPC_KEEPALIVE_READ_IDLE and
+// GONACOS_GRPC_KEEPALIVE_PING_TIMEOUT env vars.
+func WithGRPCKeepAlive(readIdle, pingTimeout time.Duration) Option {
+	return func(o *options) {
+		o.GRPCKeepAlive = GRPCKeepAliveConfig{
+			ReadIdleTimeout: readIdle,
+			PingTimeout:     pingTimeout,
+		}
+	}
 }
 
 func (o *options) resolveAddr() string {
@@ -596,6 +632,32 @@ func (o *options) resolveMetricsToken() string {
 		return o.MetricsToken
 	}
 	return os.Getenv("GONACOS_METRICS_TOKEN")
+}
+
+// resolveGRPCKeepAlive returns the gRPC HTTP/2 keepalive config. Returns the
+// explicitly configured values when set, otherwise the
+// GONACOS_GRPC_KEEPALIVE_READ_IDLE and GONACOS_GRPC_KEEPALIVE_PING_TIMEOUT
+// env vars, otherwise zero values (PINGs disabled — legacy behavior).
+func (o *options) resolveGRPCKeepAlive() grpcsrv.KeepAliveConfig {
+	cfg := o.GRPCKeepAlive
+	if cfg.ReadIdleTimeout == 0 {
+		if v := os.Getenv("GONACOS_GRPC_KEEPALIVE_READ_IDLE"); v != "" {
+			if d, err := time.ParseDuration(v); err == nil && d > 0 {
+				cfg.ReadIdleTimeout = d
+			}
+		}
+	}
+	if cfg.PingTimeout == 0 {
+		if v := os.Getenv("GONACOS_GRPC_KEEPALIVE_PING_TIMEOUT"); v != "" {
+			if d, err := time.ParseDuration(v); err == nil && d > 0 {
+				cfg.PingTimeout = d
+			}
+		}
+	}
+	return grpcsrv.KeepAliveConfig{
+		ReadIdleTimeout: cfg.ReadIdleTimeout,
+		PingTimeout:     cfg.PingTimeout,
+	}
 }
 
 // splitHostPort splits an address into host and port. Returns "127.0.0.1" and

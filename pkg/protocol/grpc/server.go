@@ -546,6 +546,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// forwards Header(), WriteHeader(), Write(), and Flush() to the
 	// underlying writer while tallying bytes written.
 	rec := &grpcResponseRecorder{ResponseWriter: w}
+	// Wrap the request body so we can record the request byte count
+	// for gonacos_grpc_request_bytes. The wrapper is transparent —
+	// it forwards Read() and Close() to the underlying body while
+	// tallying bytes read. Handlers read through this wrapper; a
+	// rate-limit rejection that never reads the body observes 0.
+	var cr *countingReader
+	if r.Body != nil {
+		cr = &countingReader{ReadCloser: r.Body}
+		r.Body = cr
+	}
 
 	// Per-IP rate limiting. A false return yields RESOURCE_EXHAUSTED without
 	// invoking the handler, so a flooded peer cannot starve legitimate
@@ -602,6 +612,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			map[string]string{"method": r.URL.Path},
 			HTTPBytesBuckets(),
 		).Observe(int64(rec.bytes))
+		// Request size distribution. The counter is the byte count
+		// read from the request body (the gRPC frame payload + the
+		// 5-byte length-prefix header). Operators use this to spot
+		// a peer sending oversized requests (resource exhaustion
+		// vector) and to estimate ingress bandwidth. A rate-limit
+		// rejection that short-circuits before reading the body
+		// observes 0 — distinct from a small legitimate request.
+		var reqN int64
+		if cr != nil {
+			reqN = cr.n
+		}
+		s.MetricsRegistry.Histogram("gonacos_grpc_request_bytes",
+			map[string]string{"method": r.URL.Path},
+			HTTPBytesBuckets(),
+		).Observe(reqN)
 	}
 }
 
@@ -631,6 +656,25 @@ func (r *grpcResponseRecorder) Flush() {
 	if f, ok := r.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// countingReader wraps an io.ReadCloser to count bytes read, for the
+// gonacos_grpc_request_bytes histogram. The wrapper is transparent —
+// it forwards Read() and Close() to the underlying reader while
+// tallying bytes read. The count is observed by ServeHTTP after the
+// handler returns, so the histogram captures the full request payload
+// regardless of whether the handler read it all (a handler that
+// short-circuits on a rate-limit rejection reads 0 bytes; a handler
+// that decodes a large payload reads all of them).
+type countingReader struct {
+	io.ReadCloser
+	n int64
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	r.n += int64(n)
+	return n, err
 }
 
 // formatGRPCDuration trims sub-millisecond noise for log readability, matching

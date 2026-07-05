@@ -601,6 +601,29 @@ func TestServerMetricsRegistryIncrements(t *testing.T) {
 	if rhObserved <= 0 {
 		t.Fatalf("response-bytes observed = %d, want > 0 (handler wrote a non-empty payload)", rhObserved)
 	}
+
+	// Request bytes histogram should also have one observation for
+	// /Request/request. The observed value is the byte count read from
+	// the request body (the gRPC frame payload + 5-byte length-prefix
+	// header). The request is encodeGRPCRequestBody(Payload{...}), so
+	// the request is non-empty and the observed value should be > 0.
+	qkey := "gonacos_grpc_request_bytes//Request/request"
+	registry.mu.Lock()
+	qh, qhok := registry.histos[qkey]
+	registry.mu.Unlock()
+	if !qhok {
+		t.Fatalf("no request-bytes histogram recorded for key %q (histos: %v)", qkey, registry.histos)
+	}
+	qh.mu.Lock()
+	qhCount := qh.obsCount
+	qhObserved := qh.observed
+	qh.mu.Unlock()
+	if qhCount != 1 {
+		t.Fatalf("request-bytes histogram observations = %d, want 1", qhCount)
+	}
+	if qhObserved <= 0 {
+		t.Fatalf("request-bytes observed = %d, want > 0 (client sent a non-empty payload)", qhObserved)
+	}
 }
 
 // TestServerUnaryHandlerPanicIncrementsMetric verifies that a panicking

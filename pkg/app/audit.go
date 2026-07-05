@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/godeps/gonacos/pkg/observability"
 )
 
 // AuditAction is the category of auditable event. Keep this list small and
@@ -314,4 +316,73 @@ func withAuditUser(r *http.Request, action AuditAction, username string) AuditEv
 	event := auditFromRequest(r, action)
 	event.User = username
 	return event
+}
+
+// metricsAuditLogger wraps an AuditLogger and increments a counter on
+// every event. The counter is the alerting signal for "audit event rate
+// spiked" — a sudden burst of login_failed events is a brute-force
+// attempt, a burst of failure results is a permission-scan, and a
+// non-zero rate of any action confirms the audit pipeline is wired.
+//
+// Counter labels are deliberately low-cardinality: {action, result}.
+// Username and IP are high-cardinality and belong in the log file, not
+// in Prometheus — a per-user counter would blow up the series count
+// and most values would have a single observation.
+type metricsAuditLogger struct {
+	next AuditLogger
+	// registry is captured rather than a *Counter because the labelled
+	// counter is looked up per-event with {action, result} — the
+	// Registry deduplicates internally, so the per-event cost is a
+	// map read (RLock) after the first event with a given label set.
+	registry *observability.Registry
+}
+
+// AuditMetricsRegistry is the observability registry used by the
+// metricsAuditLogger. Set once by [SetAuditMetricsRegistry] from
+// server.New; the metricsAuditLogger is constructed afterwards via
+// [WrapWithMetrics]. Nil registry means no metrics are recorded — the
+// logger still works, just without the counter.
+//
+// Package-level rather than passed through every AuditLogger
+// constructor because the loggers are constructed in multiple places
+// (server.New, app.NewHandlerWithServicesAndRegistry, tests) and a
+// package-level setter keeps the construction sites unchanged.
+var AuditMetricsRegistry *observability.Registry
+
+// SetAuditMetricsRegistry wires the registry that the metricsAuditLogger
+// will use to count audit events. Called once from server.New after the
+// registry is constructed. After this call, [WrapWithMetrics] returns a
+// logger that increments gonacos_audit_events_total{action,result} per
+// event. Safe to call with nil to disable metrics (e.g., in tests).
+func SetAuditMetricsRegistry(r *observability.Registry) {
+	AuditMetricsRegistry = r
+}
+
+// WrapWithMetrics wraps an AuditLogger so every event increments
+// gonacos_audit_events_total{action,result}. When no registry is
+// configured (SetAuditMetricsRegistry not called or called with nil),
+// the original logger is returned unchanged — backward compatible with
+// embedders that don't wire observability.
+func WrapWithMetrics(logger AuditLogger) AuditLogger {
+	if AuditMetricsRegistry == nil || logger == nil {
+		return logger
+	}
+	return &metricsAuditLogger{
+		next:     logger,
+		registry: AuditMetricsRegistry,
+	}
+}
+
+// Log increments gonacos_audit_events_total{action,result} and
+// delegates to the wrapped logger. The labelled counter is looked up
+// per-event; the Registry caches the *Counter for a given label set
+// after the first observation, so the steady-state cost is an RLock'd
+// map read plus an atomic increment — negligible against the file I/O
+// the wrapped logger performs.
+func (m *metricsAuditLogger) Log(e AuditEvent) {
+	m.registry.Counter("gonacos_audit_events_total", map[string]string{
+		"action": string(e.Action),
+		"result": string(e.Result),
+	}).Inc()
+	m.next.Log(e)
 }

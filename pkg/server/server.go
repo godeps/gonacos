@@ -112,6 +112,13 @@ func New(opts ...Option) (*Server, error) {
 	// is constructed below, so we add the hook after the registry is
 	// available.
 	registry := observability.NewRegistry()
+	// Wire the audit-event counter before constructing the audit
+	// logger so WrapWithMetrics can find the registry. Audit events
+	// increment gonacos_audit_events_total{action,result} — the
+	// alerting signal for "audit rate spiked" (brute-force login,
+	// permission scan). Set before buildAuditLogger below so the
+	// wrapper picks it up.
+	app.SetAuditMetricsRegistry(registry)
 	redisClient.AddHook(newRedisMetricsHook(registry))
 
 	persist := store.NewRedisPersistence(redisClient, coord, dumpPath)
@@ -479,19 +486,26 @@ func (s *Server) Services() *app.ServiceBundle { return s.bundle }
 // fan out to both the application logger and a JSON-lines file at path. If
 // the file cannot be opened, the server logs a warning and continues with
 // logger-only audit so events are not lost.
+//
+// The assembled logger is wrapped with [app.WrapWithMetrics] so every
+// event increments gonacos_audit_events_total{action,result} — the
+// alerting signal for "audit event rate spiked" (brute-force login,
+// permission scan). The wrapper is a no-op when AuditMetricsRegistry
+// is nil (registry not yet wired at first call, or embedder that
+// opted out of observability).
 func buildAuditLogger(logger Logger, path string) app.AuditLogger {
 	loggerAudit := app.NewLoggerAuditLogger(logger)
 	if path == "" {
-		return loggerAudit
+		return app.WrapWithMetrics(loggerAudit)
 	}
 	fileAudit, err := app.NewFileAuditLogger(path)
 	if err != nil {
 		if logger != nil {
 			logger.Infof("audit: file logger disabled for path %q: %v", path, err)
 		}
-		return loggerAudit
+		return app.WrapWithMetrics(loggerAudit)
 	}
-	return app.NewMultiAuditLogger(loggerAudit, fileAudit)
+	return app.WrapWithMetrics(app.NewMultiAuditLogger(loggerAudit, fileAudit))
 }
 
 // Coordinator returns the shared snapshot coordinator. Register additional

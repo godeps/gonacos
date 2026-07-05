@@ -196,14 +196,7 @@ func New(opts ...Option) (*Server, error) {
 
 	// Recovery wraps the innermost handler so panics produce a 500 JSON
 	// response with the request ID instead of crashing the connection.
-	// Placed inside request ID so the deferred recover() can read the rid
-	// from the context.
 	httpHandler = newRecoveryMiddleware(logger, httpHandler)
-
-	// Request ID must wrap recovery so the rid is available in the context
-	// when recovery's deferred function runs, and so every response —
-	// including 500s from panics — carries the X-Request-Id header.
-	httpHandler = newRequestIDMiddleware(httpHandler)
 
 	// Per-IP rate limiting. Disabled when rps <= 0. The background cleanup
 	// goroutine reaps idle buckets so the map doesn't grow unbounded under
@@ -221,6 +214,14 @@ func New(opts ...Option) (*Server, error) {
 	httpHandler = app.NewMaxBodyMiddleware(o.resolveHTTPMaxBody(), httpHandler)
 
 	httpHandler = newRequestLogMiddleware(logger, o.resolveHTTPVerboseLog(), registry, httpHandler)
+
+	// Request ID must wrap recovery, request log, max-body, and rate-limit
+	// so the rid is available in the context when any of them runs —
+	// including the recovery deferred function (for 500s), the request log
+	// (so the log line carries rid=<id> instead of rid=""), and the 413/429
+	// rejection paths (so every response, including rejections, carries the
+	// X-Request-Id header for correlation).
+	httpHandler = newRequestIDMiddleware(httpHandler)
 
 	// Security headers outermost so every response — including 429/413/500
 	// produced by the upper middlewares — carries nosniff, frame-options,

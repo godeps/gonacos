@@ -9,7 +9,7 @@ import (
 
 func TestAIPromptFullLifecycleViaHTTP(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ai/prompt/draft", url.Values{
 		"id":      {"p1"},
@@ -49,7 +49,7 @@ func TestAIPromptFullLifecycleViaHTTP(t *testing.T) {
 
 func TestAIPromptPublishWithoutSubmitRequiresForce(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ai/prompt/draft", url.Values{
 		"id": {"p2"}, "name": {"n"}, "content": {"c"},
@@ -69,7 +69,7 @@ func TestAIPromptPublishWithoutSubmitRequiresForce(t *testing.T) {
 
 func TestAIPromptLabelsAndBizTags(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ai/prompt/draft", url.Values{
 		"id": {"p3"}, "name": {"n"}, "content": {"c"},
@@ -105,7 +105,7 @@ func TestAIPromptLabelsAndBizTags(t *testing.T) {
 
 func TestAIPromptDelete(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ai/prompt/draft", url.Values{
 		"id": {"p4"}, "name": {"n"}, "content": {"c"},
@@ -125,7 +125,7 @@ func TestAIPromptDelete(t *testing.T) {
 
 func TestAIPromptMissingIDReturns400(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	result := postForm(t, handler, http.MethodPost, "/v3/console/ai/prompt/draft", url.Values{
 		"name": {"n"}, "content": {"c"},
@@ -137,7 +137,7 @@ func TestAIPromptMissingIDReturns400(t *testing.T) {
 
 func TestAIPromptRedraftAndVersionDownload(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ai/prompt/draft", url.Values{
 		"id": {"p5"}, "name": {"n"}, "content": {"v1 content"},
@@ -173,7 +173,7 @@ func TestAIPromptRedraftAndVersionDownload(t *testing.T) {
 
 func TestAISkillUploadBypassesDraft(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ai/skills/upload", url.Values{
 		"id":      {"s1"},
@@ -195,7 +195,7 @@ func TestAISkillUploadBypassesDraft(t *testing.T) {
 
 func TestAISkillBatchUpload(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	items := `[{"id":"s2","name":"skill2","content":"c2"},{"id":"s3","name":"skill3","content":"c3"}]`
 	body := postForm(t, handler, http.MethodPost, "/v3/console/ai/skills/upload/batch", url.Values{
@@ -216,7 +216,7 @@ func TestAISkillBatchUpload(t *testing.T) {
 
 func TestAIAgentSpecUploadAndClientSearch(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ai/agentspecs/upload", url.Values{
 		"id":      {"a1"},
@@ -251,7 +251,7 @@ func TestAIAgentSpecUploadAndClientSearch(t *testing.T) {
 
 func TestAIMcpServerCRUD(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ai/mcp", url.Values{
 		"id":       {"m1"},
@@ -303,7 +303,7 @@ func TestAIMcpServerCRUD(t *testing.T) {
 
 func TestAIA2AAgentRegisterAndVersions(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ai/a2a", url.Values{
 		"id":       {"a1"},
@@ -338,7 +338,7 @@ func TestAIA2AAgentRegisterAndVersions(t *testing.T) {
 
 func TestAIImportSources(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	body := doJSON(t, handler, http.MethodGet, "/v3/console/ai/import/sources", nil, http.StatusOK)
 	data, _ := json.Marshal(body.Data)
@@ -353,7 +353,7 @@ func TestAIImportSources(t *testing.T) {
 
 func TestAIPipelines(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	body := doJSON(t, handler, http.MethodGet, "/v3/console/ai/pipelines/list", nil, http.StatusOK)
 	data, _ := json.Marshal(body.Data)
@@ -378,7 +378,7 @@ func TestAIPipelines(t *testing.T) {
 
 func TestAICopilotDisabledByDefault(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	result := postForm(t, handler, http.MethodPost, "/v3/console/copilot/prompt/optimize", url.Values{
 		"prompt": {"hello"},
@@ -390,7 +390,7 @@ func TestAICopilotDisabledByDefault(t *testing.T) {
 
 func TestAICopilotConfig(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	body := doJSON(t, handler, http.MethodGet, "/v3/console/copilot/config", nil, http.StatusOK)
 	data, _ := json.Marshal(body.Data)
@@ -405,7 +405,7 @@ func TestAICopilotConfig(t *testing.T) {
 
 func TestAIPromptMetadataRoundtrip(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ai/prompt/draft", url.Values{
 		"id":       {"p6"},
@@ -432,7 +432,7 @@ func TestAIPromptMetadataRoundtrip(t *testing.T) {
 
 func TestAIPromptAdminAndConsoleBothWork(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/admin/ai/prompt/draft", url.Values{
 		"id": {"p7"}, "name": {"n"}, "content": {"c"},
@@ -454,7 +454,7 @@ func TestAIPromptAdminAndConsoleBothWork(t *testing.T) {
 
 func TestAIPromptGovernanceStub(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	body := doJSON(t, handler, http.MethodGet, "/v3/console/ai/prompt/governance?id=p1", nil, http.StatusOK)
 	if body.Code != 0 {

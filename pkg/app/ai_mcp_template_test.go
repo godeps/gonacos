@@ -11,14 +11,32 @@ import (
 
 	"github.com/godeps/gonacos/pkg/ai"
 	"github.com/godeps/gonacos/pkg/ai/mcptemplate"
+	authsvc "github.com/godeps/gonacos/pkg/auth"
 )
 
 // templateTestHandler builds a handler with an AI service for template tests.
+// Wrapped with admin token injection so /v3/admin/ai/ routes work without
+// explicit token passing.
 func templateTestHandler(t *testing.T) (http.Handler, *ai.Service) {
 	t.Helper()
 	bundle := NewServiceBundle()
+	if _, err := bundle.Auth.BootstrapAdmin("nacos"); err != nil {
+		t.Fatalf("bootstrap admin: %v", err)
+	}
+	result, err := bundle.Auth.Login("nacos", "nacos")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	token := result.AccessToken
 	bundle.AI = ai.NewService(nil)
-	return NewHandlerWithServices("../..", bundle), bundle.AI
+	h := NewHandlerWithServices("../..", bundle)
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(authsvc.AuthorizationHeader) == "" {
+			r.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+token)
+		}
+		h.ServeHTTP(w, r)
+	})
+	return wrapped, bundle.AI
 }
 
 // postJSON sends a POST request with a JSON body.

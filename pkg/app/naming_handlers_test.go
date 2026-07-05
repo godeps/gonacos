@@ -10,7 +10,7 @@ import (
 
 func TestNamingServiceCreateViaConsole(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ns/service", url.Values{
 		"namespaceId":      {"ns1"},
@@ -34,7 +34,7 @@ func TestNamingServiceCreateViaConsole(t *testing.T) {
 
 func TestNamingServiceCreateDuplicateReturns409(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	form := url.Values{
 		"namespaceId": {"ns2"}, "groupName": {"g"}, "serviceName": {"dup"},
@@ -48,7 +48,7 @@ func TestNamingServiceCreateDuplicateReturns409(t *testing.T) {
 
 func TestNamingInstanceRegisterAndList(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/client/ns/instance", url.Values{
 		"namespaceId": {"ns3"},
@@ -82,7 +82,7 @@ func TestNamingInstanceRegisterAndList(t *testing.T) {
 
 func TestNamingInstanceRegisterMissingIPReturns400(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	result := postForm(t, handler, http.MethodPost, "/v3/client/ns/instance", url.Values{
 		"namespaceId": {"ns4"},
@@ -97,7 +97,7 @@ func TestNamingInstanceRegisterMissingIPReturns400(t *testing.T) {
 
 func TestNamingInstanceDeregister(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/client/ns/instance", url.Values{
 		"namespaceId": {"ns5"}, "groupName": {"g"}, "serviceName": {"svc"},
@@ -123,7 +123,7 @@ func TestNamingInstanceDeregister(t *testing.T) {
 
 func TestNamingServiceList(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	for _, name := range []string{"alpha", "beta"} {
 		postForm(t, handler, http.MethodPost, "/v3/console/ns/service", url.Values{
@@ -148,7 +148,7 @@ func TestNamingServiceList(t *testing.T) {
 
 func TestNamingSelectorTypes(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	body := doJSON(t, handler, http.MethodGet, "/v3/console/ns/service/selector/types", nil, http.StatusOK)
 	data, _ := json.Marshal(body.Data)
@@ -163,7 +163,7 @@ func TestNamingSelectorTypes(t *testing.T) {
 
 func TestNamingClusterUpdate(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ns/service", url.Values{
 		"namespaceId": {"ns7"}, "groupName": {"g"}, "serviceName": {"svc"},
@@ -177,7 +177,7 @@ func TestNamingClusterUpdate(t *testing.T) {
 
 func TestNamingAdminInstanceRegisterAndPartialUpdate(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/admin/ns/instance", url.Values{
 		"namespaceId": {"ns8"}, "groupName": {"g"}, "serviceName": {"svc"},
@@ -206,7 +206,7 @@ func TestNamingAdminInstanceRegisterAndPartialUpdate(t *testing.T) {
 
 func TestNamingSubscribers(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ns/service", url.Values{
 		"namespaceId": {"ns9"}, "groupName": {"g"}, "serviceName": {"svc"},
@@ -226,7 +226,7 @@ func TestNamingSubscribers(t *testing.T) {
 
 func TestNamingHealthCheckers(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	body := doJSON(t, handler, http.MethodGet, "/v3/admin/ns/health/checkers", nil, http.StatusOK)
 	data, _ := json.Marshal(body.Data)
@@ -241,7 +241,7 @@ func TestNamingHealthCheckers(t *testing.T) {
 
 func TestNamingServiceUpdateAndDelete(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/console/ns/service", url.Values{
 		"namespaceId": {"ns10"}, "groupName": {"g"}, "serviceName": {"svc"},
@@ -257,7 +257,7 @@ func TestNamingServiceUpdateAndDelete(t *testing.T) {
 
 func TestNamingServiceGetMissingReturns400(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	missing := doJSON(t, handler, http.MethodGet, "/v3/console/ns/service?groupName=g&serviceName=svc", nil, http.StatusBadRequest)
 	if missing.Code != 10000 || !strings.Contains(missing.Message, "namespaceId") {

@@ -13,12 +13,14 @@ import (
 	"github.com/godeps/gonacos/pkg/ai"
 	"github.com/godeps/gonacos/pkg/ai/mcpclient"
 	"github.com/godeps/gonacos/pkg/ai/mcprouter"
+	authsvc "github.com/godeps/gonacos/pkg/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // routerTestHandler builds a NewHandlerWithServices-backed handler with a
 // router that has one stub backend mounted. The stub exposes a single
-// "echo" tool that returns the message it received.
+// "echo" tool that returns the message it received. Wrapped with admin
+// token injection so /v3/admin/ai/ routes work without explicit token.
 func routerTestHandler(t *testing.T) (http.Handler, *mcprouter.Router) {
 	t.Helper()
 	router := mcprouter.New()
@@ -40,8 +42,23 @@ func routerTestHandler(t *testing.T) (http.Handler, *mcprouter.Router) {
 		t.Fatalf("add backend: %v", err)
 	}
 	bundle := NewServiceBundle()
+	if _, err := bundle.Auth.BootstrapAdmin("nacos"); err != nil {
+		t.Fatalf("bootstrap admin: %v", err)
+	}
+	result, err := bundle.Auth.Login("nacos", "nacos")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	token := result.AccessToken
 	bundle.AI = ai.NewService(nil, ai.WithMcpRouter(router))
-	return NewHandlerWithServices("../..", bundle), router
+	h := NewHandlerWithServices("../..", bundle)
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(authsvc.AuthorizationHeader) == "" {
+			r.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+token)
+		}
+		h.ServeHTTP(w, r)
+	})
+	return wrapped, router
 }
 
 // TestMcpRouterProxyEndToEnd connects to /v3/ai/mcp/router with mcpclient

@@ -63,7 +63,9 @@ var authMiddlewareOpenPaths = map[string]struct{}{
 }
 
 // adminOnlyExactPaths require a valid globalAdmin token. Exact match so that
-// "/v3/auth/user" does not match "/v3/auth/user/login".
+// "/v3/auth/user" does not match "/v3/auth/user/login". These paths are
+// under /v3/auth/, not /v3/admin/, so the adminOnlyPrefixes entry for
+// /v3/admin/ does not cover them.
 var adminOnlyExactPaths = map[string]struct{}{
 	"/v3/auth/user":            {},
 	"/v3/auth/user/list":       {},
@@ -74,24 +76,20 @@ var adminOnlyExactPaths = map[string]struct{}{
 	"/v3/auth/permission":      {},
 	"/v3/auth/permission/list": {},
 	"/v3/auth/permission/has":  {},
-	// Backup exports the full snapshot envelope (all config, naming, auth,
-	// AI state) — equivalent to a database dump. Restore overwrites all
-	// state from a caller-supplied payload. Both are admin-only.
-	"/v3/admin/ops/backup":  {},
-	"/v3/admin/ops/restore": {},
-	"/v3/admin/ops/metrics": {},
-	"/v3/admin/ops/info":    {},
 }
 
 // adminOnlyPrefixes require a valid globalAdmin token for any path that
 // starts with the prefix. Used for subtrees that should be admin-only in
-// their entirety (e.g., pprof handlers).
+// their entirety.
 var adminOnlyPrefixes = []string{
-	// pprof endpoints (heap, goroutine, profile, trace, ...) dump live
-	// process state. A heap dump leaks in-memory secrets (auth tokens,
-	// bcrypt hashes); a goroutine dump leaks call-stack arguments; a CPU
-	// profile is reconnaissance for further attacks. Admin-only.
-	"/v3/admin/ops/pprof/",
+	// /v3/admin/ covers all admin routes — namespace CRUD, config CRUD,
+	// AI CRUD (prompt/skill/agentspec/a2a/mcp/apitomcp/dify/mcp-router),
+	// cluster ops, plugin ops, loader ops, and ops (backup/restore/metrics/
+	// pprof). The public state/health endpoints under /v3/admin/core/state
+	// are in authMiddlewareOpenPaths and allowed through before this check.
+	// Fail-closed: any new admin route is admin-only by default; add the
+	// route to authMiddlewareOpenPaths explicitly to make it public.
+	"/v3/admin/",
 }
 
 func (m *authMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {

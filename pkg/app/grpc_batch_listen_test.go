@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	authsvc "github.com/godeps/gonacos/pkg/auth"
 	grpcsrv "github.com/godeps/gonacos/pkg/protocol/grpc"
 )
 
@@ -24,7 +25,21 @@ func TestGRPCConfigBatchListen(t *testing.T) {
 	// server. NewHandlerWithServices wires the bridge to the bundle's
 	// config service, and SetupGRPCServerWithPush uses the same bundle's adapters.
 	services := NewServiceBundle()
-	handler := NewHandlerWithServices("../..", services)
+	if _, err := services.Auth.BootstrapAdmin("nacos"); err != nil {
+		t.Fatalf("bootstrap admin: %v", err)
+	}
+	result, err := services.Auth.Login("nacos", "nacos")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	token := result.AccessToken
+	inner := NewHandlerWithServices("../..", services)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(authsvc.AuthorizationHeader) == "" {
+			r.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+token)
+		}
+		inner.ServeHTTP(w, r)
+	})
 	srv := SetupGRPCServerWithPush(services, nil)
 	addr := "127.0.0.1:0"
 	go func() { _ = srv.ListenAndServe(addr) }()

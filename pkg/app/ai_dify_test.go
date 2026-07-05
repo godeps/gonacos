@@ -12,26 +12,59 @@ import (
 	"github.com/godeps/gonacos/pkg/ai"
 	"github.com/godeps/gonacos/pkg/ai/dify"
 	"github.com/godeps/gonacos/pkg/ai/mcprouter"
+	authsvc "github.com/godeps/gonacos/pkg/auth"
 )
 
 // difyTestHandler builds a handler with an AI service that has a Dify client
-// and MCP router attached.
+// and MCP router attached. Wrapped with admin token injection so
+// /v3/admin/ai/ routes work without explicit token.
 func difyTestHandler(t *testing.T, endpoint, apiKey string) (http.Handler, *ai.Service) {
 	t.Helper()
 	router := mcprouter.New()
 	client := dify.NewClient(endpoint, apiKey)
 	bundle := NewServiceBundle()
+	if _, err := bundle.Auth.BootstrapAdmin("nacos"); err != nil {
+		t.Fatalf("bootstrap admin: %v", err)
+	}
+	result, err := bundle.Auth.Login("nacos", "nacos")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	token := result.AccessToken
 	bundle.AI = ai.NewService(nil, ai.WithMcpRouter(router), ai.WithDify(client))
-	return NewHandlerWithServices("../..", bundle), bundle.AI
+	h := NewHandlerWithServices("../..", bundle)
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(authsvc.AuthorizationHeader) == "" {
+			r.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+token)
+		}
+		h.ServeHTTP(w, r)
+	})
+	return wrapped, bundle.AI
 }
 
 // difyTestHandlerNoClient builds a handler with no Dify client attached.
+// Wrapped with admin token injection like difyTestHandler.
 func difyTestHandlerNoClient(t *testing.T) (http.Handler, *ai.Service) {
 	t.Helper()
 	router := mcprouter.New()
 	bundle := NewServiceBundle()
+	if _, err := bundle.Auth.BootstrapAdmin("nacos"); err != nil {
+		t.Fatalf("bootstrap admin: %v", err)
+	}
+	result, err := bundle.Auth.Login("nacos", "nacos")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	token := result.AccessToken
 	bundle.AI = ai.NewService(nil, ai.WithMcpRouter(router))
-	return NewHandlerWithServices("../..", bundle), bundle.AI
+	h := NewHandlerWithServices("../..", bundle)
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(authsvc.AuthorizationHeader) == "" {
+			r.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+token)
+		}
+		h.ServeHTTP(w, r)
+	})
+	return wrapped, bundle.AI
 }
 
 // TestDifyConfigGetNotConfigured verifies the config endpoint reports
@@ -270,8 +303,22 @@ func TestDifyWorkflowsImportInvalidJSON(t *testing.T) {
 func TestDifyWorkflowsImportNoRouter(t *testing.T) {
 	t.Parallel()
 	bundle := NewServiceBundle()
+	if _, err := bundle.Auth.BootstrapAdmin("nacos"); err != nil {
+		t.Fatalf("bootstrap admin: %v", err)
+	}
+	result, err := bundle.Auth.Login("nacos", "nacos")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	token := result.AccessToken
 	bundle.AI = ai.NewService(nil) // no router
-	handler := NewHandlerWithServices("../..", bundle)
+	inner := NewHandlerWithServices("../..", bundle)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(authsvc.AuthorizationHeader) == "" {
+			r.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+token)
+		}
+		inner.ServeHTTP(w, r)
+	})
 	body := map[string]any{
 		"serverName": "dify",
 		"tools": []map[string]any{

@@ -12,7 +12,7 @@ import (
 // held.
 func TestNamespaceListConfigCountPopulated(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	// Publish two configs in the default public namespace.
 	postForm(t, handler, http.MethodPost, "/nacos/v3/admin/cs/config", url.Values{
@@ -73,7 +73,7 @@ func TestNamespaceListConfigCountPopulated(t *testing.T) {
 // namespaces).
 func TestNamespaceListConfigCountEmpty(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/admin/core/namespace", url.Values{
 		"namespaceId":   {"ns-empty"},

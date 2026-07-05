@@ -10,7 +10,7 @@ import (
 
 func TestStubHandlers_DerbyOps(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	rec := doGet(t, handler, "/v3/admin/cs/ops/derby", http.StatusOK)
 	if !strings.Contains(rec.Body.String(), "applicable") {
@@ -20,7 +20,7 @@ func TestStubHandlers_DerbyOps(t *testing.T) {
 
 func TestStubHandlers_ImportDerby(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	rec := doPostForm(t, handler, "/v3/admin/cs/ops/derby/import", url.Values{}, http.StatusOK)
 	if !strings.Contains(rec.Body.String(), "applicable") {
@@ -30,7 +30,7 @@ func TestStubHandlers_ImportDerby(t *testing.T) {
 
 func TestStubHandlers_NamingMetrics(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	rec := doGet(t, handler, "/v3/admin/ns/ops/metrics", http.StatusOK)
 	if !strings.Contains(rec.Body.String(), "serviceCount") {
@@ -40,7 +40,7 @@ func TestStubHandlers_NamingMetrics(t *testing.T) {
 
 func TestStubHandlers_GetSwitches(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	rec := doGet(t, handler, "/v3/admin/ns/ops/switches", http.StatusOK)
 	if !strings.Contains(rec.Body.String(), "distroEnabled") {
@@ -50,7 +50,7 @@ func TestStubHandlers_GetSwitches(t *testing.T) {
 
 func TestStubHandlers_UpdateSwitches(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	rec := doPutForm(t, handler, "/v3/admin/ns/ops/switches", url.Values{
 		"entry": {"autoDeregisterWhenInstanceDown"},
@@ -63,7 +63,7 @@ func TestStubHandlers_UpdateSwitches(t *testing.T) {
 
 func TestStubHandlers_ClientDistro(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	rec := doGet(t, handler, "/v3/admin/ns/client/distro?clientId=client-1", http.StatusOK)
 	if !strings.Contains(rec.Body.String(), "responsible") {
@@ -73,7 +73,7 @@ func TestStubHandlers_ClientDistro(t *testing.T) {
 
 func TestStubHandlers_ConfigSearchByContent(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	// No configs exist yet; search returns an empty page (not an error).
 	rec := doGet(t, handler, "/v3/console/cs/config/searchDetail?namespaceId=public&content=test", http.StatusOK)
@@ -84,7 +84,7 @@ func TestStubHandlers_ConfigSearchByContent(t *testing.T) {
 
 func TestStubHandlers_SearchByContentMissingContent(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	// Missing content parameter → error response.
 	doGet(t, handler, "/v3/console/cs/config/searchDetail?namespaceId=public", http.StatusBadRequest)
@@ -92,7 +92,7 @@ func TestStubHandlers_SearchByContentMissingContent(t *testing.T) {
 
 func TestStubHandlers_PublishConfigMetadataMissingFields(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	// Missing required fields → error.
 	doPutForm(t, handler, "/v3/admin/cs/config/metadata", url.Values{}, http.StatusBadRequest)
@@ -100,7 +100,7 @@ func TestStubHandlers_PublishConfigMetadataMissingFields(t *testing.T) {
 
 func TestStubHandlers_PluginConfigMissingId(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	// Missing pluginId → error.
 	doPutForm(t, handler, "/v3/console/plugin/config", url.Values{}, http.StatusBadRequest)
@@ -108,7 +108,7 @@ func TestStubHandlers_PluginConfigMissingId(t *testing.T) {
 
 func TestStubHandlers_PluginStatusMissingId(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	// Missing pluginId → error. Use PUT.
 	req := httptest.NewRequest(http.MethodPut, "/v3/console/plugin/status", strings.NewReader(""))
@@ -122,7 +122,7 @@ func TestStubHandlers_PluginStatusMissingId(t *testing.T) {
 
 func TestStubHandlers_ClientListEmpty(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	rec := doGet(t, handler, "/v3/admin/ns/client/list", http.StatusOK)
 	if !strings.Contains(rec.Body.String(), "clients") {
@@ -132,7 +132,7 @@ func TestStubHandlers_ClientListEmpty(t *testing.T) {
 
 func TestStubHandlers_ClientDetailMissingId(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	// Missing clientId → error.
 	doGet(t, handler, "/v3/admin/ns/client", http.StatusBadRequest)
@@ -140,7 +140,7 @@ func TestStubHandlers_ClientDetailMissingId(t *testing.T) {
 
 func TestStubHandlers_AgentSpecVersionMetaMissingId(t *testing.T) {
 	t.Parallel()
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	// Missing id → error.
 	doGet(t, handler, "/v3/admin/ai/agentspecs/version/meta", http.StatusBadRequest)

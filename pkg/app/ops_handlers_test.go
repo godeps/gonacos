@@ -124,7 +124,7 @@ func TestOpsRestoreReplaysState(t *testing.T) {
 	if createRec.Code != http.StatusOK {
 		t.Fatalf("create status = %d, body: %s", createRec.Code, createRec.Body.String())
 	}
-	listBody := doJSON(t, handler, http.MethodGet, "/v3/admin/core/namespace/list", nil, http.StatusOK)
+	listBody := doJSONWithHeaders(t, handler, http.MethodGet, "/v3/admin/core/namespace/list", nil, map[string]string{authsvc.AuthorizationHeader: authsvc.TokenPrefix + token}, http.StatusOK)
 	data, _ := json.Marshal(listBody.Data)
 	var list []map[string]any
 	if err := json.Unmarshal(data, &list); err != nil {
@@ -142,7 +142,7 @@ func TestOpsRestoreReplaysState(t *testing.T) {
 		t.Fatalf("restore status = %d, body: %s", restoreRec.Code, restoreRec.Body.String())
 	}
 
-	listBody = doJSON(t, handler, http.MethodGet, "/v3/admin/core/namespace/list", nil, http.StatusOK)
+	listBody = doJSONWithHeaders(t, handler, http.MethodGet, "/v3/admin/core/namespace/list", nil, map[string]string{authsvc.AuthorizationHeader: authsvc.TokenPrefix + token}, http.StatusOK)
 	data, _ = json.Marshal(listBody.Data)
 	if err := json.Unmarshal(data, &list); err != nil {
 		t.Fatalf("unmarshal list after restore: %v", err)

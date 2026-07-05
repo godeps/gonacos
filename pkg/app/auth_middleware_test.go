@@ -75,12 +75,46 @@ func TestAuthMiddleware_StandardPathNoToken(t *testing.T) {
 	svc, _, _ := newAuthTestServices(t)
 	handler := newAuthMiddleware(svc, echoHandler())
 
-	req := httptest.NewRequest(http.MethodGet, "/v3/admin/cs/config/list", nil)
+	// Console routes (not under /v3/admin/) remain permissive — a missing
+	// token is allowed for SDK compatibility. Admin routes (/v3/admin/*)
+	// require an admin token; see TestAuthMiddleware_AdminPathNoToken.
+	req := httptest.NewRequest(http.MethodGet, "/v3/console/cs/config/list", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("standard path without token (permissive): want 200, got %d", rec.Code)
+	}
+}
+
+func TestAuthMiddleware_AdminPrefixNoToken(t *testing.T) {
+	svc, _, _ := newAuthTestServices(t)
+	handler := newAuthMiddleware(svc, echoHandler())
+
+	// Admin routes under /v3/admin/ require a valid admin token — anonymous
+	// access is rejected. This covers namespace, config, AI, cluster, plugin,
+	// loader, and ops routes that fall under the /v3/admin/ prefix.
+	req := httptest.NewRequest(http.MethodGet, "/v3/admin/cs/config/list", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("admin prefix path without token: want 401, got %d", rec.Code)
+	}
+}
+
+func TestAuthMiddleware_AdminPrefixNonAdminToken(t *testing.T) {
+	svc, _, nonAdminToken := newAuthTestServices(t)
+	handler := newAuthMiddleware(svc, echoHandler())
+
+	// A non-admin token is rejected for admin prefix routes.
+	req := httptest.NewRequest(http.MethodGet, "/v3/admin/core/namespace/list", nil)
+	req.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+nonAdminToken)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("admin prefix path with non-admin token: want 403, got %d", rec.Code)
 	}
 }
 

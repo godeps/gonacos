@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	authsvc "github.com/godeps/gonacos/pkg/auth"
 )
 
 type resultBody struct {
@@ -20,10 +22,37 @@ type resultBody struct {
 	Data    any    `json:"data"`
 }
 
+// newTestHandler creates a handler with a fresh service bundle and wraps it
+// so every request carries an admin Bearer token when the request doesn't
+// already have an Authorization header. This lets existing tests that hit
+// /v3/admin/ routes (admin-only since /v3/admin/ was added to
+// adminOnlyPrefixes) work without explicitly passing a token on every call.
+// Tests that need to test unauthenticated or non-admin access should use
+// NewHandler directly.
+func newTestHandler(t *testing.T) http.Handler {
+	t.Helper()
+	bundle := NewServiceBundle()
+	if _, err := bundle.Auth.BootstrapAdmin("nacos"); err != nil {
+		t.Fatalf("bootstrap admin: %v", err)
+	}
+	result, err := bundle.Auth.Login("nacos", "nacos")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	token := result.AccessToken
+	h := NewHandlerWithServices("../..", bundle)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(authsvc.AuthorizationHeader) == "" {
+			r.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+token)
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
 func TestNewHandlerHealthEndpoints(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	tests := []struct {
 		name string
 		path string
@@ -58,7 +87,7 @@ func TestNewHandlerHealthEndpoints(t *testing.T) {
 func TestNewHandlerRegistersContractOperationStubs(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	// All manifest operations are now implemented. The previously-stubbed
 	// /v3/admin/ns/client/distro now returns 200 instead of 501.
 	req := httptest.NewRequest(http.MethodGet, "/nacos/v3/admin/ns/client/distro", nil)
@@ -74,7 +103,7 @@ func TestNewHandlerRegistersContractOperationStubs(t *testing.T) {
 func TestNewHandlerReturnsNacosResultForUnknownRoute(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	req := httptest.NewRequest(http.MethodGet, "/v3/missing", nil)
 	rec := httptest.NewRecorder()
 
@@ -95,7 +124,7 @@ func TestNewHandlerReturnsNacosResultForUnknownRoute(t *testing.T) {
 func TestNamespaceConsoleLifecycle(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	namespaceID := "console_ns"
 
 	postForm(t, handler, http.MethodPost, "/nacos/v3/console/core/namespace", url.Values{
@@ -144,7 +173,7 @@ func TestNamespaceConsoleLifecycle(t *testing.T) {
 func TestNamespaceAdminLifecycle(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	namespaceID := "admin_ns"
 
 	postForm(t, handler, http.MethodPost, "/v3/admin/core/namespace", url.Values{
@@ -182,7 +211,7 @@ func TestNamespaceAdminLifecycle(t *testing.T) {
 func TestNamespaceValidationErrors(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	tests := []struct {
 		name   string
 		method string
@@ -239,7 +268,7 @@ func TestNamespaceValidationErrors(t *testing.T) {
 func TestConfigAdminConsoleAndClientLifecycle(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	form := url.Values{
 		"dataId":     {"app.json"},
 		"groupName":  {"DEFAULT_GROUP"},
@@ -303,7 +332,7 @@ func TestConfigAdminConsoleAndClientLifecycle(t *testing.T) {
 func TestConfigValidationErrors(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	tests := []struct {
 		name   string
 		method string
@@ -367,7 +396,7 @@ func TestConfigValidationErrors(t *testing.T) {
 func TestConfigBatchDeleteAndClone(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	postForm(t, handler, http.MethodPost, "/v3/admin/cs/config", url.Values{
 		"dataId":    {"source.json"},
@@ -419,7 +448,7 @@ func TestConfigBatchDeleteAndClone(t *testing.T) {
 func TestConfigCloneAndBatchDeleteValidation(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	missingIDs := doJSON(t, handler, http.MethodDelete, "/v3/admin/cs/config/batch", nil, http.StatusBadRequest)
 	if !strings.Contains(missingIDs.Message, "ids") {
@@ -443,7 +472,7 @@ func TestConfigCloneAndBatchDeleteValidation(t *testing.T) {
 func TestConfigHistoryLifecycle(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	dataID := "history.json"
 	groupName := "HISTORY_GROUP"
 	firstContent := "history-first-content"
@@ -509,7 +538,7 @@ func TestConfigHistoryLifecycle(t *testing.T) {
 func TestConfigHistoryValidation(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	dataID := "history-validation.json"
 	groupName := "HISTORY_VALIDATION_GROUP"
 
@@ -546,7 +575,7 @@ func TestConfigHistoryValidation(t *testing.T) {
 func TestConfigExportAndImportZip(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	dataID := "export.json"
 	groupName := "EXPORT_GROUP"
 	content := "export-content"
@@ -597,7 +626,7 @@ func TestConfigExportAndImportZip(t *testing.T) {
 func TestConfigImportExportValidation(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	invalidNamespace := doJSON(t, handler, http.MethodGet, "/v3/admin/cs/config/export?ids=1&namespaceId=invalid%20namespace", nil, http.StatusBadRequest)
 	if !strings.Contains(invalidNamespace.Message, "namespaceId") {
@@ -618,7 +647,7 @@ func TestConfigImportExportValidation(t *testing.T) {
 func TestConfigListenerQueries(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	dataID := "listener.json"
 	groupName := "LISTENER_GROUP"
 	postForm(t, handler, http.MethodPost, "/v3/admin/cs/config", url.Values{
@@ -641,7 +670,7 @@ func TestConfigListenerQueries(t *testing.T) {
 func TestConfigListenerValidation(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	missingDataID := doJSON(t, handler, http.MethodGet, "/v3/admin/cs/config/listener?groupName=GROUP", nil, http.StatusBadRequest)
 	if missingDataID.Code != 10000 || !strings.Contains(missingDataID.Message, "dataId") {
@@ -664,7 +693,7 @@ func TestConfigListenerValidation(t *testing.T) {
 func TestConfigBetaLifecycle(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	dataID := "beta.json"
 	groupName := "BETA_GROUP"
 	content := "beta-content"
@@ -708,7 +737,7 @@ func TestConfigBetaLifecycle(t *testing.T) {
 func TestConfigBetaValidation(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	missingDataID := doJSON(t, handler, http.MethodGet, "/v3/admin/cs/config/beta?groupName=GROUP", nil, http.StatusBadRequest)
 	if missingDataID.Code != 10000 || !strings.Contains(missingDataID.Message, "dataId") {
@@ -731,7 +760,7 @@ func TestConfigBetaValidation(t *testing.T) {
 func TestConfigGrayLifecycle(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	dataID := "gray.json"
 	groupName := "GRAY_GROUP"
 	content := "gray-content"
@@ -789,7 +818,7 @@ func TestConfigGrayLifecycle(t *testing.T) {
 func TestConfigGrayClientQuery(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	dataID := "gray-client.json"
 	groupName := "GRAY_CLIENT_GROUP"
 	regularContent := "regular-content"
@@ -859,7 +888,7 @@ func TestConfigGrayClientQuery(t *testing.T) {
 func TestConfigListenerTracking(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	dataID := "tracked-listener.json"
 	groupName := "TRACKED_GROUP"
 	content := "tracked-content"
@@ -908,7 +937,7 @@ func TestConfigListenerTracking(t *testing.T) {
 func TestConfigBetaClientQuery(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	dataID := "beta-client.json"
 	groupName := "BETA_CLIENT_GROUP"
 	regularContent := "regular-content"
@@ -974,7 +1003,7 @@ func TestConfigBetaClientQuery(t *testing.T) {
 func TestConfigCapacityAndMetrics(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 	groupName := "CAPACITY_GROUP"
 	dataID := "capacity.json"
 
@@ -1049,7 +1078,7 @@ func TestConfigCapacityAndMetrics(t *testing.T) {
 func TestConfigOpsLogLevel(t *testing.T) {
 	t.Parallel()
 
-	handler := NewHandler("../..")
+	handler := newTestHandler(t)
 
 	// Set config module log level.
 	resp := doJSON(t, handler, http.MethodPut, "/v3/admin/cs/ops/log?logLevel=DEBUG", nil, http.StatusOK)
@@ -1113,6 +1142,17 @@ func postJSON(t *testing.T, handler http.Handler, path, body string, wantStatus 
 
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	return serveJSON(t, handler, req, wantStatus)
+}
+
+func postJSONWithHeaders(t *testing.T, handler http.Handler, path, body string, headers map[string]string, wantStatus int) resultBody {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	for name, value := range headers {
+		req.Header.Set(name, value)
+	}
 	return serveJSON(t, handler, req, wantStatus)
 }
 

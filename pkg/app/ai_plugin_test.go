@@ -11,11 +11,14 @@ import (
 
 	"github.com/godeps/gonacos/pkg/ai"
 	"github.com/godeps/gonacos/pkg/ai/plugin"
+	authsvc "github.com/godeps/gonacos/pkg/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // pluginTestHandler builds a handler with an AI service that has a plugin
-// manager with the echo plugin registered.
+// manager with the echo plugin registered. The handler is wrapped so every
+// request carries an admin token (admin AI routes under /v3/admin/ai/
+// require it).
 func pluginTestHandler(t *testing.T) (http.Handler, *ai.Service) {
 	t.Helper()
 	mgr := plugin.NewManager()
@@ -23,16 +26,47 @@ func pluginTestHandler(t *testing.T) (http.Handler, *ai.Service) {
 		t.Fatalf("register: %v", err)
 	}
 	bundle := NewServiceBundle()
+	if _, err := bundle.Auth.BootstrapAdmin("nacos"); err != nil {
+		t.Fatalf("bootstrap admin: %v", err)
+	}
+	result, err := bundle.Auth.Login("nacos", "nacos")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	token := result.AccessToken
 	bundle.AI = ai.NewService(nil, ai.WithPlugins(mgr))
-	return NewHandlerWithServices("../..", bundle), bundle.AI
+	h := NewHandlerWithServices("../..", bundle)
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(authsvc.AuthorizationHeader) == "" {
+			r.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+token)
+		}
+		h.ServeHTTP(w, r)
+	})
+	return wrapped, bundle.AI
 }
 
 // pluginTestHandlerNoManager builds a handler with no plugin manager attached.
+// Wrapped with admin token injection like pluginTestHandler.
 func pluginTestHandlerNoManager(t *testing.T) (http.Handler, *ai.Service) {
 	t.Helper()
 	bundle := NewServiceBundle()
+	if _, err := bundle.Auth.BootstrapAdmin("nacos"); err != nil {
+		t.Fatalf("bootstrap admin: %v", err)
+	}
+	result, err := bundle.Auth.Login("nacos", "nacos")
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	token := result.AccessToken
 	bundle.AI = ai.NewService(nil)
-	return NewHandlerWithServices("../..", bundle), bundle.AI
+	h := NewHandlerWithServices("../..", bundle)
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(authsvc.AuthorizationHeader) == "" {
+			r.Header.Set(authsvc.AuthorizationHeader, authsvc.TokenPrefix+token)
+		}
+		h.ServeHTTP(w, r)
+	})
+	return wrapped, bundle.AI
 }
 
 // TestPluginList verifies listing registered plugins.

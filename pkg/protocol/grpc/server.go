@@ -126,9 +126,10 @@ func (s *Server) Serve(ln net.Listener) error {
 	s.mu.Lock()
 	s.listener = ln
 	s.server = &http.Server{
-		Handler:     s,
-		IdleTimeout: 5 * time.Minute,
-		Protocols:   protocols,
+		Handler:           s,
+		IdleTimeout:       5 * time.Minute,
+		ReadHeaderTimeout: 5 * time.Second,
+		Protocols:         protocols,
 	}
 	s.mu.Unlock()
 	return s.server.Serve(ln)
@@ -154,8 +155,9 @@ func (s *Server) ServeTLS(ln net.Listener, certFile, keyFile string) error {
 	s.mu.Lock()
 	s.listener = ln
 	s.server = &http.Server{
-		Handler:     s,
-		IdleTimeout: 5 * time.Minute,
+		Handler:           s,
+		IdleTimeout:       5 * time.Minute,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 	s.mu.Unlock()
 	return s.server.ServeTLS(ln, certFile, keyFile)

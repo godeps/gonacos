@@ -29,10 +29,10 @@ type SyncEvent struct {
 type SyncHandler func(event SyncEvent) error
 
 const (
-	syncChannel    = "gonacos:sync"
+	syncChannel     = "gonacos:sync"
 	memberKeyPrefix = "gonacos:member:"
-	memberSetKey   = "gonacos:members"
-	memberTTL      = 10 * time.Second
+	memberSetKey    = "gonacos:members"
+	memberTTL       = 10 * time.Second
 )
 
 // RedisSync coordinates pub/sub and member discovery via Redis.

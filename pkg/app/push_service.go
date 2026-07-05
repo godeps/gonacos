@@ -37,11 +37,11 @@ type PushService struct {
 	config   *configsvc.Service
 	naming   *namingsvc.Service
 
-	mu             sync.RWMutex
-	configSubs     map[string]map[string]bool // configKey -> set of clientIPs
-	serviceSubs    map[string]map[string]bool // serviceKey -> set of clientIPs
-	ipConfigSubs   map[string]map[string]bool // clientIP -> set of configKeys
-	ipServiceSubs  map[string]map[string]bool // clientIP -> set of serviceKeys
+	mu            sync.RWMutex
+	configSubs    map[string]map[string]bool // configKey -> set of clientIPs
+	serviceSubs   map[string]map[string]bool // serviceKey -> set of clientIPs
+	ipConfigSubs  map[string]map[string]bool // clientIP -> set of configKeys
+	ipServiceSubs map[string]map[string]bool // clientIP -> set of serviceKeys
 }
 
 // NewPushService creates a PushService wired to the given registry and
@@ -231,11 +231,11 @@ func normalizeNamespace(n string) string {
 // that the SDK expects on the BiRequestStream.
 func buildConfigChangeNotify(namespaceID, groupName, dataID string) grpc.Payload {
 	body := map[string]any{
-		"group":      groupName,
-		"dataId":     dataID,
-		"tenant":     normalizeNamespace(namespaceID),
-		"module":     "config",
-		"requestId":  nextPushID(),
+		"group":     groupName,
+		"dataId":    dataID,
+		"tenant":    normalizeNamespace(namespaceID),
+		"module":    "config",
+		"requestId": nextPushID(),
 	}
 	bodyBytes, _ := json.Marshal(body)
 	return grpc.Payload{

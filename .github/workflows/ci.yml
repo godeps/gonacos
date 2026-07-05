@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # Unit tests + vet + build. No external services required.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: GOWORK=off go mod download
+
+      - name: gofmt
+        run: |
+          # Exclude node_modules (flatted ships a Go file) and the embedded dist.
+          files=$(find . -name "*.go" -not -path "*/node_modules/*" -not -path "*/console-ui/dist/*")
+          out=$(gofmt -l $files)
+          if [ -n "$out" ]; then
+            echo "gofmt issues in: $out"
+            exit 1
+          fi
+
+      - name: go vet
+        run: GOWORK=off go vet ./...
+
+      - name: go test (unit)
+        run: GOWORK=off go test -race -count=1 ./...
+
+  # Build the gonacos binary, then run the three integration test suites
+  # that require GONACOS_BINARY (aie2e, cluster, sdkcompat).
+  integration:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build gonacos binary
+        run: GOWORK=off go build -o /tmp/gonacos-test ./cmd/gonacos
+
+      - name: Run aie2e tests
+        run: GOWORK=off go test -timeout 120s ./test/aie2e/...
+        env:
+          GONACOS_BINARY: /tmp/gonacos-test
+
+      - name: Run cluster tests
+        run: GOWORK=off go test -timeout 120s ./test/cluster/...
+        env:
+          GONACOS_BINARY: /tmp/gonacos-test
+
+      - name: Run sdkcompat tests
+        run: GOWORK=off go test -timeout 120s ./test/sdkcompat/...
+        env:
+          GONACOS_BINARY: /tmp/gonacos-test
+
+  # Build the React SPA and verify //go:embed picks it up. Skipped on
+  # push-only runs to save CI minutes; runs on PRs.
+  web:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: pkg/web/console-ui/package-lock.json
+
+      - name: Build React SPA
+        run: bash pkg/web/build-web.sh
+
+      - name: Verify Go embed picks up dist
+        run: GOWORK=off go build -o /tmp/gonacos-web-check ./cmd/gonacos

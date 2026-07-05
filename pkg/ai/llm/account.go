@@ -72,11 +72,11 @@ func buildProviderEntry(p ProviderConfig, key schemas.ModelProvider) (*providerE
 	}
 	enabled := true
 	k := schemas.Key{
-		ID:     p.Name,
-		Name:   p.Name,
-		Value:  *schemas.NewSecretVar(p.APIKey),
-		Models: schemas.WhiteList{"*"},
-		Weight: 1.0,
+		ID:      p.Name,
+		Name:    p.Name,
+		Value:   *schemas.NewSecretVar(p.APIKey),
+		Models:  schemas.WhiteList{"*"},
+		Weight:  1.0,
 		Enabled: &enabled,
 	}
 	return &providerEntry{

@@ -22,10 +22,10 @@ import (
 
 // wireType constants for the protobuf wire format.
 const (
-	wireVarint    = 0
-	wireFixed64   = 1
-	wireBytes     = 2
-	wireFixed32   = 5
+	wireVarint  = 0
+	wireFixed64 = 1
+	wireBytes   = 2
+	wireFixed32 = 5
 )
 
 // ErrProto is returned when the protobuf stream is malformed.
@@ -162,9 +162,9 @@ func (w *ProtoWriter) WriteMessage(field int, b []byte) {
 
 // Metadata is the Nacos gRPC Metadata message.
 type Metadata struct {
-	Type    string            `json:"type"`
-	ClientIP string           `json:"clientIp,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
+	Type     string            `json:"type"`
+	ClientIP string            `json:"clientIp,omitempty"`
+	Headers  map[string]string `json:"headers,omitempty"`
 }
 
 // Encode encodes Metadata to protobuf bytes.

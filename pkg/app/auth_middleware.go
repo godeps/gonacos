@@ -60,15 +60,15 @@ var authMiddlewareOpenPaths = map[string]struct{}{
 // adminOnlyExactPaths require a valid globalAdmin token. Exact match so that
 // "/v3/auth/user" does not match "/v3/auth/user/login".
 var adminOnlyExactPaths = map[string]struct{}{
-	"/v3/auth/user":           {},
-	"/v3/auth/user/list":      {},
-	"/v3/auth/user/search":    {},
-	"/v3/auth/role":           {},
-	"/v3/auth/role/list":      {},
-	"/v3/auth/role/search":    {},
-	"/v3/auth/permission":     {},
+	"/v3/auth/user":            {},
+	"/v3/auth/user/list":       {},
+	"/v3/auth/user/search":     {},
+	"/v3/auth/role":            {},
+	"/v3/auth/role/list":       {},
+	"/v3/auth/role/search":     {},
+	"/v3/auth/permission":      {},
 	"/v3/auth/permission/list": {},
-	"/v3/auth/permission/has": {},
+	"/v3/auth/permission/has":  {},
 }
 
 func (m *authMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {

@@ -748,12 +748,12 @@ func TestConfigGrayLifecycle(t *testing.T) {
 
 	// Publish the gray version.
 	postForm(t, handler, http.MethodPost, "/v3/admin/cs/config/gray", url.Values{
-		"dataId":              {dataID},
-		"groupName":           {groupName},
-		"content":             {content},
-		"grayName":            {grayName},
-		"grayMatchRuleExp":    {grayRule},
-		"grayVersion":         {"v1"},
+		"dataId":           {dataID},
+		"groupName":        {groupName},
+		"content":          {content},
+		"grayName":         {grayName},
+		"grayMatchRuleExp": {grayRule},
+		"grayVersion":      {"v1"},
 	}, http.StatusOK)
 
 	// Query the gray by name.

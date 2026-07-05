@@ -119,8 +119,8 @@ func (h aiHandler) difyWorkflowsImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		ServerName string                  `json:"serverName"`
-		Tools      []*dify.WorkflowTool    `json:"tools"`
+		ServerName string               `json:"serverName"`
+		Tools      []*dify.WorkflowTool `json:"tools"`
 	}
 	if err := decodeJSONRequest(r, &req); err != nil {
 		writeDifyError(w, http.StatusBadRequest, err.Error())

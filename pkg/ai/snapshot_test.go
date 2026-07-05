@@ -41,11 +41,11 @@ func TestAISnapshotRoundtrip(t *testing.T) {
 	_ = mcp
 
 	a2a, err := s.RegisterA2AAgent(A2AAgent{
-		ID:        "a1",
-		Name:      "assistant",
-		Endpoint:  "http://assistant.local",
-		Protocol:  "jsonrpc",
-		Version:   "1.0",
+		ID:       "a1",
+		Name:     "assistant",
+		Endpoint: "http://assistant.local",
+		Protocol: "jsonrpc",
+		Version:  "1.0",
 	})
 	if err != nil {
 		t.Fatalf("create a2a: %v", err)

@@ -43,18 +43,18 @@ var (
 // Member is a cluster node. In standalone mode the cluster has exactly one
 // member marked as self.
 type Member struct {
-	ID         string            `json:"id"`
-	IP         string            `json:"ip"`
-	Port       int               `json:"port"`
-	State      string            `json:"state"`
-	APIPort    int               `json:"apiPort,omitempty"`
-	GRPCPort   int               `json:"grpcPort,omitempty"`
-	RaftPort   int               `json:"raftPort,omitempty"`
-	GrpcAPIInfo string           `json:"grpcApiInfo,omitempty"`
-	Metadata   map[string]string `json:"metadata,omitempty"`
-	Abilities  []string          `json:"abilities,omitempty"`
-	IsSelf     bool              `json:"isSelf,omitempty"`
-	UpdatedAt  time.Time         `json:"updatedAt,omitempty"`
+	ID          string            `json:"id"`
+	IP          string            `json:"ip"`
+	Port        int               `json:"port"`
+	State       string            `json:"state"`
+	APIPort     int               `json:"apiPort,omitempty"`
+	GRPCPort    int               `json:"grpcPort,omitempty"`
+	RaftPort    int               `json:"raftPort,omitempty"`
+	GrpcAPIInfo string            `json:"grpcApiInfo,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	Abilities   []string          `json:"abilities,omitempty"`
+	IsSelf      bool              `json:"isSelf,omitempty"`
+	UpdatedAt   time.Time         `json:"updatedAt,omitempty"`
 }
 
 // Plugin is a registered server plugin.
@@ -72,11 +72,11 @@ type Plugin struct {
 
 // Service owns the in-memory cluster state.
 type Service struct {
-	mu      sync.RWMutex
-	mode    Mode
-	self    *Member
-	members map[string]*Member
-	plugins map[string]*Plugin
+	mu       sync.RWMutex
+	mode     Mode
+	self     *Member
+	members  map[string]*Member
+	plugins  map[string]*Plugin
 	logLevel string
 }
 
@@ -109,10 +109,10 @@ func NewService(mode Mode, selfIP string, apiPort, grpcPort, raftPort int) *Serv
 		UpdatedAt: now,
 	}
 	svc := &Service{
-		mode:    mode,
-		self:    self,
-		members: map[string]*Member{self.ID: self},
-		plugins: seedPlugins(),
+		mode:     mode,
+		self:     self,
+		members:  map[string]*Member{self.ID: self},
+		plugins:  seedPlugins(),
 		logLevel: "INFO",
 	}
 	return svc
@@ -311,10 +311,10 @@ func (s *Service) IDs() map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return map[string]any{
-		"serverId":  s.self.ID,
-		"workerId":  0,
+		"serverId":   s.self.ID,
+		"workerId":   0,
 		"datacenter": "",
-		"mode":      string(s.mode),
+		"mode":       string(s.mode),
 	}
 }
 
@@ -341,8 +341,8 @@ func (s *Service) LoaderMetrics() map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return map[string]any{
-		"mode":    string(s.mode),
-		"members": s.ListMembers(),
+		"mode":        string(s.mode),
+		"members":     s.ListMembers(),
 		"reloadCount": 0,
 	}
 }
@@ -351,7 +351,7 @@ func (s *Service) LoaderMetrics() map[string]any {
 // persistent connection registry this returns a count-only snapshot.
 func (s *Service) CurrentClients() map[string]any {
 	return map[string]any{
-		"count":  0,
+		"count":   0,
 		"clients": []any{},
 	}
 }

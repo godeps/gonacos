@@ -126,7 +126,10 @@ func createUser(base, token, user, pass string) {
 	resp := doRequest(base+"/v3/auth/user", http.MethodPost, body, "application/x-www-form-urlencoded", token)
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	var result struct{ Code int; Message string }
+	var result struct {
+		Code    int
+		Message string
+	}
 	_ = json.Unmarshal(b, &result)
 	if result.Code != 0 {
 		log.Fatalf("create user: code=%d msg=%q body=%s", result.Code, result.Message, string(b))
@@ -138,7 +141,10 @@ func deleteUser(base, token, user string) {
 	resp := doRequest(base+"/v3/auth/user", http.MethodDelete, body, "application/x-www-form-urlencoded", token)
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	var result struct{ Code int; Message string }
+	var result struct {
+		Code    int
+		Message string
+	}
 	_ = json.Unmarshal(b, &result)
 	if result.Code != 0 {
 		log.Fatalf("delete user: code=%d msg=%q body=%s", result.Code, result.Message, string(b))
@@ -169,7 +175,10 @@ func createRole(base, token, role, user string) {
 	resp := doRequest(base+"/v3/auth/role", http.MethodPost, body, "application/x-www-form-urlencoded", token)
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	var result struct{ Code int; Message string }
+	var result struct {
+		Code    int
+		Message string
+	}
 	_ = json.Unmarshal(b, &result)
 	if result.Code != 0 {
 		log.Fatalf("create role: code=%d msg=%q body=%s", result.Code, result.Message, string(b))
@@ -181,7 +190,10 @@ func deleteRole(base, token, role, user string) {
 	resp := doRequest(base+"/v3/auth/role", http.MethodDelete, body, "application/x-www-form-urlencoded", token)
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	var result struct{ Code int; Message string }
+	var result struct {
+		Code    int
+		Message string
+	}
 	_ = json.Unmarshal(b, &result)
 	if result.Code != 0 {
 		log.Fatalf("delete role: code=%d msg=%q body=%s", result.Code, result.Message, string(b))
@@ -212,7 +224,10 @@ func createPermission(base, token, role, resource, action string) {
 	resp := doRequest(base+"/v3/auth/permission", http.MethodPost, body, "application/x-www-form-urlencoded", token)
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	var result struct{ Code int; Message string }
+	var result struct {
+		Code    int
+		Message string
+	}
 	_ = json.Unmarshal(b, &result)
 	if result.Code != 0 {
 		log.Fatalf("create permission: code=%d msg=%q body=%s", result.Code, result.Message, string(b))
@@ -224,7 +239,10 @@ func deletePermission(base, token, role, resource, action string) {
 	resp := doRequest(base+"/v3/auth/permission", http.MethodDelete, body, "application/x-www-form-urlencoded", token)
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
-	var result struct{ Code int; Message string }
+	var result struct {
+		Code    int
+		Message string
+	}
 	_ = json.Unmarshal(b, &result)
 	if result.Code != 0 {
 		log.Fatalf("delete permission: code=%d msg=%q body=%s", result.Code, result.Message, string(b))
@@ -255,7 +273,7 @@ func hasPermission(base, token, role, resource, action string) bool {
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)
 	var result struct {
-		Code int `json:"code"`
+		Code int  `json:"code"`
 		Data bool `json:"data"`
 	}
 	if err := json.Unmarshal(b, &result); err != nil {

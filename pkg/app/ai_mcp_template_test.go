@@ -234,10 +234,10 @@ func TestTemplateRender(t *testing.T) {
 	t.Parallel()
 	handler, _ := templateTestHandler(t)
 	form := url.Values{
-		"id":          {"rest-api-to-mcp"},
-		"serverName":  {"testapi"},
-		"toolName":    {"greet"},
-		"url":         {"https://example.com"},
+		"id":         {"rest-api-to-mcp"},
+		"serverName": {"testapi"},
+		"toolName":   {"greet"},
+		"url":        {"https://example.com"},
 	}
 	rec := postFormVals(handler, "/v3/admin/ai/mcp/templates/render", form)
 	if rec.Code != http.StatusOK {

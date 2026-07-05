@@ -347,7 +347,7 @@ func defaultNamingSwitches() map[string]any {
 		"jsonConfigObserverEnabled":      true,
 		"distroEnabled":                  true,
 		"distroHotDataEnabled":           true,
-		"smartReload":                   true,
+		"smartReload":                    true,
 	}
 }
 

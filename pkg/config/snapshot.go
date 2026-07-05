@@ -8,11 +8,11 @@ import (
 // configSnapshot captures all config items, beta items, history, and ID
 // counters so a restore reproduces the exact pre-backup state.
 type configSnapshot struct {
-	Items          []Item     `json:"items"`
-	BetaItems      []BetaItem `json:"betaItems"`
-	History        []HistoryItem `json:"history"`
-	NextID         int64      `json:"nextId"`
-	NextHistoryID  int64      `json:"nextHistoryId"`
+	Items         []Item        `json:"items"`
+	BetaItems     []BetaItem    `json:"betaItems"`
+	History       []HistoryItem `json:"history"`
+	NextID        int64         `json:"nextId"`
+	NextHistoryID int64         `json:"nextHistoryId"`
 }
 
 // SnapshotKey identifies the config service in backup envelopes.

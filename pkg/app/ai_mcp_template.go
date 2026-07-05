@@ -109,8 +109,8 @@ func (h aiHandler) templateRender(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	protocol.WriteResult(w, http.StatusOK, map[string]any{
-		"id":     id,
-		"yaml":   string(out),
+		"id":       id,
+		"yaml":     string(out),
 		"rendered": true,
 	})
 }

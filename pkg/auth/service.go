@@ -76,35 +76,35 @@ type Permission struct {
 
 // UserPage is the Nacos-compatible paginated user list.
 type UserPage struct {
-	TotalCount int     `json:"totalCount"`
-	PageNumber int     `json:"pageNumber"`
-	PagesAvailable int `json:"pagesAvailable"`
-	PageItems  []User  `json:"pageItems"`
+	TotalCount     int    `json:"totalCount"`
+	PageNumber     int    `json:"pageNumber"`
+	PagesAvailable int    `json:"pagesAvailable"`
+	PageItems      []User `json:"pageItems"`
 }
 
 // RolePage is the Nacos-compatible paginated role list.
 type RolePage struct {
-	TotalCount int    `json:"totalCount"`
-	PageNumber int    `json:"pageNumber"`
-	PagesAvailable int `json:"pagesAvailable"`
-	PageItems  []Role `json:"pageItems"`
+	TotalCount     int    `json:"totalCount"`
+	PageNumber     int    `json:"pageNumber"`
+	PagesAvailable int    `json:"pagesAvailable"`
+	PageItems      []Role `json:"pageItems"`
 }
 
 // PermissionPage is the Nacos-compatible paginated permission list.
 type PermissionPage struct {
-	TotalCount int          `json:"totalCount"`
-	PageNumber int          `json:"pageNumber"`
-	PagesAvailable int      `json:"pagesAvailable"`
-	PageItems  []Permission `json:"pageItems"`
+	TotalCount     int          `json:"totalCount"`
+	PageNumber     int          `json:"pageNumber"`
+	PagesAvailable int          `json:"pagesAvailable"`
+	PageItems      []Permission `json:"pageItems"`
 }
 
 // Service owns the in-memory auth registry and token signer.
 type Service struct {
 	mu          sync.RWMutex
 	users       map[string]*User
-	roles       map[string][]string // role -> []username
+	roles       map[string][]string        // role -> []username
 	userRoles   map[string]map[string]bool // username -> set(role)
-	permissions map[string][]Permission // role -> []permission
+	permissions map[string][]Permission    // role -> []permission
 	tokens      *tokenManager
 }
 
@@ -545,10 +545,10 @@ func (s *Service) Login(username, password string) (LoginResult, error) {
 		return LoginResult{}, err
 	}
 	return LoginResult{
-		AccessToken:  token,
-		TokenTTL:     DefaultTokenTTL,
-		GlobalAdmin:  user.GlobalAdmin,
-		Username:     username,
+		AccessToken: token,
+		TokenTTL:    DefaultTokenTTL,
+		GlobalAdmin: user.GlobalAdmin,
+		Username:    username,
 	}, nil
 }
 

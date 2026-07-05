@@ -5,11 +5,11 @@ import "sort"
 // authSnapshotEntry mirrors a user row including salted hash so backups can
 // restore credentials without knowing plaintext passwords.
 type authSnapshotEntry struct {
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	Salt        string `json:"salt"`
-	Enabled     bool   `json:"enabled"`
-	GlobalAdmin bool   `json:"globalAdmin"`
+	Username    string   `json:"username"`
+	Password    string   `json:"password"`
+	Salt        string   `json:"salt"`
+	Enabled     bool     `json:"enabled"`
+	GlobalAdmin bool     `json:"globalAdmin"`
 	Roles       []string `json:"roles"`
 }
 
@@ -20,8 +20,8 @@ type authPermissionEntry struct {
 }
 
 type authSnapshot struct {
-	Users       []authSnapshotEntry    `json:"users"`
-	Permissions []authPermissionEntry  `json:"permissions"`
+	Users       []authSnapshotEntry   `json:"users"`
+	Permissions []authPermissionEntry `json:"permissions"`
 }
 
 // SnapshotKey identifies the auth service in backup envelopes.

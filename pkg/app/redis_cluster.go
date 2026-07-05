@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/redis/go-redis/v9"
 	"github.com/godeps/gonacos/pkg/cluster"
 	configsvc "github.com/godeps/gonacos/pkg/config"
 	namingsvc "github.com/godeps/gonacos/pkg/naming"
+	"github.com/redis/go-redis/v9"
 )
 
 // SetupRedisSync creates a RedisSync wired to the provided Redis client,
@@ -101,7 +101,7 @@ func handleRemoteConfigEvent(event cluster.SyncEvent, svc *configsvc.Service) er
 			NamespaceID string `json:"namespaceId"`
 			GroupName   string `json:"groupName"`
 			DataID      string `json:"dataId"`
-			GrayName   string `json:"grayName"`
+			GrayName    string `json:"grayName"`
 		}
 		if err := json.Unmarshal(event.Payload, &key); err != nil {
 			return err

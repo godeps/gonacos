@@ -14,7 +14,7 @@ func TestConfigSnapshotRoundtrip(t *testing.T) {
 		DataID:      "app.yml",
 		Content:     "key: value",
 		Type:        "yaml",
-		SrcUser:    "admin",
+		SrcUser:     "admin",
 	}); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
@@ -24,7 +24,7 @@ func TestConfigSnapshotRoundtrip(t *testing.T) {
 		DataID:      "app.yml",
 		Content:     "key: updated",
 		Type:        "yaml",
-		SrcUser:    "admin",
+		SrcUser:     "admin",
 	}); err != nil {
 		t.Fatalf("publish update: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestConfigSnapshotRoundtrip(t *testing.T) {
 		DataID:      "app-beta.yml",
 		Content:     "beta: true",
 		Type:        "yaml",
-		BetaIPs:    "10.0.0.1,10.0.0.2",
+		BetaIPs:     "10.0.0.1,10.0.0.2",
 	}); err != nil {
 		t.Fatalf("publish beta: %v", err)
 	}

@@ -9,29 +9,29 @@ import (
 // instances, and subscribers. Ephemeral lease state is not preserved; the
 // lease tracker re-establishes itself from LastBeatAt on restore.
 type namingServiceSnapshot struct {
-	NamespaceID  string            `json:"namespaceId"`
-	GroupName    string            `json:"groupName"`
-	ServiceName  string            `json:"serviceName"`
-	Service      serviceInfoSnap   `json:"service"`
-	Clusters     []clusterSnap     `json:"clusters"`
-	Instances    []instanceSnap    `json:"instances"`
-	Subscribers  []subscriberSnap  `json:"subscribers"`
+	NamespaceID string           `json:"namespaceId"`
+	GroupName   string           `json:"groupName"`
+	ServiceName string           `json:"serviceName"`
+	Service     serviceInfoSnap  `json:"service"`
+	Clusters    []clusterSnap    `json:"clusters"`
+	Instances   []instanceSnap   `json:"instances"`
+	Subscribers []subscriberSnap `json:"subscribers"`
 }
 
 type serviceInfoSnap struct {
-	ProtectThreshold float64            `json:"protectThreshold"`
-	Ephemeral        bool               `json:"ephemeral"`
-	Metadata         map[string]string  `json:"metadata"`
-	SelectorType     string             `json:"selectorType"`
-	SelectorText     string             `json:"selectorText"`
+	ProtectThreshold float64           `json:"protectThreshold"`
+	Ephemeral        bool              `json:"ephemeral"`
+	Metadata         map[string]string `json:"metadata"`
+	SelectorType     string            `json:"selectorType"`
+	SelectorText     string            `json:"selectorText"`
 }
 
 type clusterSnap struct {
-	Name                string            `json:"clusterName"`
-	CheckPort           int               `json:"checkPort"`
-	UseInstancePort4Check bool             `json:"useInstancePort4Check"`
-	HealthChecker       map[string]string `json:"healthChecker"`
-	Metadata            map[string]string `json:"metadata"`
+	Name                  string            `json:"clusterName"`
+	CheckPort             int               `json:"checkPort"`
+	UseInstancePort4Check bool              `json:"useInstancePort4Check"`
+	HealthChecker         map[string]string `json:"healthChecker"`
+	Metadata              map[string]string `json:"metadata"`
 }
 
 type instanceSnap struct {

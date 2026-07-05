@@ -22,16 +22,16 @@ type ClientInfo struct {
 // services it publishes (registers instances for) and subscribes to.
 type ClientDetail struct {
 	ClientInfo
-	PublishedServices []ServiceRef `json:"publishedServices"`
+	PublishedServices  []ServiceRef `json:"publishedServices"`
 	SubscribedServices []ServiceRef `json:"subscribedServices"`
 }
 
 // ClientMetric summarizes naming registry counts for the ops/metrics endpoint.
 type ClientMetric struct {
-	ServiceCount   int `json:"serviceCount"`
-	InstanceCount  int `json:"instanceCount"`
+	ServiceCount    int `json:"serviceCount"`
+	InstanceCount   int `json:"instanceCount"`
 	SubscriberCount int `json:"subscriberCount"`
-	ClientCount    int `json:"clientCount"`
+	ClientCount     int `json:"clientCount"`
 }
 
 // ListClients returns a deduplicated list of clients derived from
@@ -73,9 +73,9 @@ func (s *Service) ListClients(clientID string) []ClientInfo {
 			}
 			seen[id] = true
 			out = append(out, ClientInfo{
-				ClientID: id,
-				Addr:     inst.IP,
-				App:      inst.AppName,
+				ClientID:  id,
+				Addr:      inst.IP,
+				App:       inst.AppName,
 				Namespace: inst.NamespaceID,
 			})
 		}

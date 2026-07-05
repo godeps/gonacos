@@ -74,9 +74,9 @@ func (r *Registry) Counter(name string, labels map[string]string) *Counter {
 	return c
 }
 
-func (c *Counter) Inc()           { c.value.Add(1) }
-func (c *Counter) Add(v int64)    { c.value.Add(v) }
-func (c *Counter) Value() int64   { return c.value.Load() }
+func (c *Counter) Inc()         { c.value.Add(1) }
+func (c *Counter) Add(v int64)  { c.value.Add(v) }
+func (c *Counter) Value() int64 { return c.value.Load() }
 
 // Gauge returns or creates a gauge with the given labels.
 func (r *Registry) Gauge(name string, labels map[string]string) *Gauge {
@@ -97,9 +97,9 @@ func (r *Registry) Gauge(name string, labels map[string]string) *Gauge {
 	return g
 }
 
-func (g *Gauge) Set(v int64)    { g.value.Store(v) }
-func (g *Gauge) Add(v int64)    { g.value.Add(v) }
-func (g *Gauge) Value() int64   { return g.value.Load() }
+func (g *Gauge) Set(v int64)  { g.value.Store(v) }
+func (g *Gauge) Add(v int64)  { g.value.Add(v) }
+func (g *Gauge) Value() int64 { return g.value.Load() }
 
 // Histogram returns or creates a histogram with the given bucket upper
 // bounds. Bucket values are in milliseconds for the standard latency

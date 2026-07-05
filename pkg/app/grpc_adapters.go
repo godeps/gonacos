@@ -101,15 +101,15 @@ func (a namingGRPCAdapter) RegisterInstanceFromGRPC(body []byte) (any, error) {
 		return nil, err
 	}
 	return map[string]any{
-		"instanceId":   registered.InstanceID,
-		"ip":           registered.IP,
-		"port":         registered.Port,
-		"serviceName":  registered.ServiceName,
-		"clusterName":  registered.ClusterName,
-		"weight":       registered.Weight,
-		"healthy":      registered.Healthy,
-		"enabled":      registered.Enabled,
-		"ephemeral":    registered.Ephemeral,
+		"instanceId":  registered.InstanceID,
+		"ip":          registered.IP,
+		"port":        registered.Port,
+		"serviceName": registered.ServiceName,
+		"clusterName": registered.ClusterName,
+		"weight":      registered.Weight,
+		"healthy":     registered.Healthy,
+		"enabled":     registered.Enabled,
+		"ephemeral":   registered.Ephemeral,
 	}, nil
 }
 
@@ -236,15 +236,15 @@ func (a namingGRPCAdapter) ListServicesFromGRPC(body []byte) (any, error) {
 // sdkConfigRequest mirrors the JSON the nacos-sdk-go v2 sends in a
 // ConfigQueryRequest / ConfigPublishRequest / ConfigRemoveRequest body.
 type sdkConfigRequest struct {
-	Group      string `json:"group"`
-	DataID     string `json:"dataId"`
-	Tenant     string `json:"tenant"`
-	Content    string `json:"content"`
-	Type       string `json:"type"`
-	Tag        string `json:"tag"`
-	BetaIps    string `json:"betaIps"`
-	CasMd5     string `json:"casMd5"`
-	SrcUser    string `json:"srcUser"`
+	Group   string `json:"group"`
+	DataID  string `json:"dataId"`
+	Tenant  string `json:"tenant"`
+	Content string `json:"content"`
+	Type    string `json:"type"`
+	Tag     string `json:"tag"`
+	BetaIps string `json:"betaIps"`
+	CasMd5  string `json:"casMd5"`
+	SrcUser string `json:"srcUser"`
 }
 
 // configGRPCAdapter exposes the config service through the gRPC adapter.

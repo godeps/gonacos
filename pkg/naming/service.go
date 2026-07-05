@@ -111,28 +111,28 @@ type serviceEntry struct {
 
 // ServiceInfo is the public Nacos-compatible service representation.
 type ServiceInfo struct {
-	NamespaceID     string            `json:"namespaceId"`
-	GroupName       string            `json:"groupName"`
-	Name            string            `json:"name"`
-	ProtectThreshold float64          `json:"protectThreshold"`
-	Ephemeral       bool              `json:"ephemeral"`
-	Metadata        map[string]string `json:"metadata"`
-	Selector        Selector          `json:"selector"`
-	Clusters        []Cluster         `json:"clusters,omitempty"`
-	Instances       []Instance        `json:"instances,omitempty"`
-	InstanceCount   int               `json:"instanceCount"`
-	HealthyInstanceCount int          `json:"healthyInstanceCount"`
-	TriggerFlag     bool              `json:"triggerFlag"`
+	NamespaceID          string            `json:"namespaceId"`
+	GroupName            string            `json:"groupName"`
+	Name                 string            `json:"name"`
+	ProtectThreshold     float64           `json:"protectThreshold"`
+	Ephemeral            bool              `json:"ephemeral"`
+	Metadata             map[string]string `json:"metadata"`
+	Selector             Selector          `json:"selector"`
+	Clusters             []Cluster         `json:"clusters,omitempty"`
+	Instances            []Instance        `json:"instances,omitempty"`
+	InstanceCount        int               `json:"instanceCount"`
+	HealthyInstanceCount int               `json:"healthyInstanceCount"`
+	TriggerFlag          bool              `json:"triggerFlag"`
 }
 
 // Cluster is the Nacos-compatible cluster representation.
 type Cluster struct {
-	ServiceRef       ServiceRef        `json:"-"`
-	Name             string            `json:"clusterName"`
-	CheckPort        int               `json:"checkPort"`
-	UseInstancePort4Check bool         `json:"useInstancePort4Check"`
-	HealthChecker    map[string]string `json:"healthChecker"`
-	Metadata         map[string]string `json:"metadata"`
+	ServiceRef            ServiceRef        `json:"-"`
+	Name                  string            `json:"clusterName"`
+	CheckPort             int               `json:"checkPort"`
+	UseInstancePort4Check bool              `json:"useInstancePort4Check"`
+	HealthChecker         map[string]string `json:"healthChecker"`
+	Metadata              map[string]string `json:"metadata"`
 }
 
 // ServiceRef identifies a service by namespace, group, and name.
@@ -144,21 +144,21 @@ type ServiceRef struct {
 
 // Instance is the Nacos-compatible instance representation.
 type Instance struct {
-	NamespaceID   string            `json:"namespaceId"`
-	GroupName     string            `json:"groupName"`
-	ServiceName   string            `json:"serviceName"`
-	ClusterName   string            `json:"clusterName"`
-	IP            string            `json:"ip"`
-	Port          int               `json:"port"`
-	Weight        float64           `json:"weight"`
-	Healthy       bool              `json:"healthy"`
-	Enabled       bool              `json:"enabled"`
-	Ephemeral     bool              `json:"ephemeral"`
-	Metadata      map[string]string `json:"metadata"`
-	InstanceID    string            `json:"instanceId"`
-	LastBeatAt    time.Time         `json:"-"`
-	Marked        bool              `json:"marked"`
-	AppName       string            `json:"appName,omitempty"`
+	NamespaceID string            `json:"namespaceId"`
+	GroupName   string            `json:"groupName"`
+	ServiceName string            `json:"serviceName"`
+	ClusterName string            `json:"clusterName"`
+	IP          string            `json:"ip"`
+	Port        int               `json:"port"`
+	Weight      float64           `json:"weight"`
+	Healthy     bool              `json:"healthy"`
+	Enabled     bool              `json:"enabled"`
+	Ephemeral   bool              `json:"ephemeral"`
+	Metadata    map[string]string `json:"metadata"`
+	InstanceID  string            `json:"instanceId"`
+	LastBeatAt  time.Time         `json:"-"`
+	Marked      bool              `json:"marked"`
+	AppName     string            `json:"appName,omitempty"`
 }
 
 // Subscriber is the Nacos-compatible subscriber representation.
@@ -875,7 +875,7 @@ func (s *Service) ListSubscribers(namespaceID, groupName, serviceName string, pa
 		end = total
 	}
 	return SubscriberPage{
-		Count:      total,
+		Count:       total,
 		Subscribers: subs[start:end],
 	}, nil
 }

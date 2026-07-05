@@ -133,12 +133,12 @@ func initSDK() bool {
 		},
 	}
 	cc := constant.ClientConfig{
-		Username:    "nacos",
-		Password:    adminPassword,
-		NamespaceId: "public",
-		TimeoutMs:   5000,
-		LogLevel:    "debug",
-		AppendToStdout: true,
+		Username:            "nacos",
+		Password:            adminPassword,
+		NamespaceId:         "public",
+		TimeoutMs:           5000,
+		LogLevel:            "debug",
+		AppendToStdout:      true,
 		NotLoadCacheAtStart: true,
 	}
 

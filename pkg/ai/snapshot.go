@@ -12,21 +12,21 @@ import (
 // (those fields are json:"-" in the live type because they are served via
 // dedicated download endpoints).
 type aiResourceSnap struct {
-	ID             string                `json:"id"`
-	Name           string                `json:"name"`
-	Type           string                `json:"type"`
-	State          string                `json:"state"`
-	Owner          string                `json:"owner"`
-	Description    string                `json:"description"`
-	Labels         []string              `json:"labels"`
-	BizTags        []string              `json:"bizTags"`
-	Scope          string                `json:"scope"`
-	Metadata       map[string]string     `json:"metadata"`
-	Draft          *aiDraftSnap          `json:"draft"`
-	Versions       []aiVersionSnap       `json:"versions"`
-	CurrentVersion string                `json:"currentVersion"`
-	CreatedAt      int64                 `json:"createdAt"`
-	UpdatedAt      int64                 `json:"updatedAt"`
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	Type           string            `json:"type"`
+	State          string            `json:"state"`
+	Owner          string            `json:"owner"`
+	Description    string            `json:"description"`
+	Labels         []string          `json:"labels"`
+	BizTags        []string          `json:"bizTags"`
+	Scope          string            `json:"scope"`
+	Metadata       map[string]string `json:"metadata"`
+	Draft          *aiDraftSnap      `json:"draft"`
+	Versions       []aiVersionSnap   `json:"versions"`
+	CurrentVersion string            `json:"currentVersion"`
+	CreatedAt      int64             `json:"createdAt"`
+	UpdatedAt      int64             `json:"updatedAt"`
 }
 
 type aiDraftSnap struct {
@@ -53,14 +53,14 @@ type aiVersionSnap struct {
 }
 
 type aiSnapshot struct {
-	Prompts    []aiResourceSnap    `json:"prompts"`
-	Skills     []aiResourceSnap    `json:"skills"`
-	Specs      []aiResourceSnap    `json:"specs"`
-	Mcp        []McpServer         `json:"mcp"`
-	A2A        []A2AAgent          `json:"a2a"`
-	Pipelines  []Pipeline          `json:"pipelines"`
-	Apitomcp   []ApitomcpConfig    `json:"apitomcp,omitempty"`
-	Templates  []mcptemplate.Template `json:"templates,omitempty"`
+	Prompts   []aiResourceSnap       `json:"prompts"`
+	Skills    []aiResourceSnap       `json:"skills"`
+	Specs     []aiResourceSnap       `json:"specs"`
+	Mcp       []McpServer            `json:"mcp"`
+	A2A       []A2AAgent             `json:"a2a"`
+	Pipelines []Pipeline             `json:"pipelines"`
+	Apitomcp  []ApitomcpConfig       `json:"apitomcp,omitempty"`
+	Templates []mcptemplate.Template `json:"templates,omitempty"`
 }
 
 // SnapshotKey identifies the AI service in backup envelopes.
@@ -537,8 +537,8 @@ func decodeAIA2A(raw any) ([]A2AAgent, error) {
 					continue
 				}
 				ver := A2AAgentVersion{
-					Version:   getString(vm, "version"),
-					Author:    getString(vm, "author"),
+					Version: getString(vm, "version"),
+					Author:  getString(vm, "author"),
 				}
 				if ts := getInt64(vm, "updatedAt"); ts > 0 {
 					ver.UpdatedAt = time.UnixMilli(ts)

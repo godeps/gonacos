@@ -54,9 +54,9 @@ type CallFunc func(ctx context.Context, name string, args map[string]any) (*mcp.
 // between gonacos's McpServer registry (which stores tools as data) and
 // the Router (which expects a Backend).
 type LocalBackend struct {
-	name    string
-	tools   []*mcp.Tool
-	callFn  CallFunc
+	name   string
+	tools  []*mcp.Tool
+	callFn CallFunc
 }
 
 // NewLocalBackend creates a backend from a static tool list and a call

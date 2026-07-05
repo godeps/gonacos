@@ -178,16 +178,16 @@ type ListenerInfo struct {
 // are advisory — the service does not enforce them on publish, but they are
 // queryable and updatable so the console can display and manage them.
 type Capacity struct {
-	NamespaceID    string `json:"namespaceId"`
-	GroupName      string `json:"groupName"`
-	Quota          int    `json:"quota"`
-	MaxSize        int    `json:"maxSize"`
-	MaxAggrCount   int    `json:"maxAggrCount"`
-	MaxAggrSize    int    `json:"maxAggrSize"`
-	Usage          int    `json:"usage"`
-	UsageSize      int    `json:"usageSize"`
-	MaxAggrCountUsed int  `json:"maxAggrCountUsed"`
-	MaxAggrSizeUsed  int  `json:"maxAggrSizeUsed"`
+	NamespaceID      string `json:"namespaceId"`
+	GroupName        string `json:"groupName"`
+	Quota            int    `json:"quota"`
+	MaxSize          int    `json:"maxSize"`
+	MaxAggrCount     int    `json:"maxAggrCount"`
+	MaxAggrSize      int    `json:"maxAggrSize"`
+	Usage            int    `json:"usage"`
+	UsageSize        int    `json:"usageSize"`
+	MaxAggrCountUsed int    `json:"maxAggrCountUsed"`
+	MaxAggrSizeUsed  int    `json:"maxAggrSizeUsed"`
 }
 
 type Service struct {
@@ -396,12 +396,12 @@ func (s *Service) ClientMetrics(ip, namespaceID, groupName, dataID string) map[s
 		md5Count++
 	}
 	return map[string]any{
-		"ip":           ip,
-		"namespaceId":  normalizeNamespace(namespaceID),
-		"groupName":    groupName,
-		"dataId":       dataID,
+		"ip":            ip,
+		"namespaceId":   normalizeNamespace(namespaceID),
+		"groupName":     groupName,
+		"dataId":        dataID,
 		"listenerCount": total,
-		"listeners":    listeners,
+		"listeners":     listeners,
 	}
 }
 

@@ -10,9 +10,9 @@ type fakeSnapshotter struct {
 	data any
 }
 
-func (f *fakeSnapshotter) SnapshotKey() string        { return f.key }
-func (f *fakeSnapshotter) Snapshot() (any, error)     { return f.data, nil }
-func (f *fakeSnapshotter) Restore(data any) error     { f.data = data; return nil }
+func (f *fakeSnapshotter) SnapshotKey() string    { return f.key }
+func (f *fakeSnapshotter) Snapshot() (any, error) { return f.data, nil }
+func (f *fakeSnapshotter) Restore(data any) error { f.data = data; return nil }
 
 func TestCoordinatorSnapshotAndRestore(t *testing.T) {
 	t.Parallel()

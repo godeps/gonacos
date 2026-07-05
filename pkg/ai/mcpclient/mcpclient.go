@@ -17,7 +17,7 @@ import (
 // Tool and CallToolResult are re-exported so callers do not need to import
 // the go-sdk directly. They are type aliases, not new types.
 type (
-	Tool        = mcp.Tool
+	Tool           = mcp.Tool
 	CallToolResult = mcp.CallToolResult
 )
 

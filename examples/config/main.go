@@ -25,9 +25,9 @@ import (
 const (
 	serverHost = "127.0.0.1"
 	serverPort = 8848
-	username  = "nacos"
-	password  = "nacos"
-	namespace = "public"
+	username   = "nacos"
+	password   = "nacos"
+	namespace  = "public"
 )
 
 func main() {

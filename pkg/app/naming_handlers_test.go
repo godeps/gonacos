@@ -193,7 +193,7 @@ func TestNamingAdminInstanceRegisterAndPartialUpdate(t *testing.T) {
 	body := doJSON(t, handler, http.MethodGet, "/v3/admin/ns/instance?namespaceId=ns8&groupName=g&serviceName=svc&clusterName=DEFAULT", nil, http.StatusOK)
 	data, _ := json.Marshal(body.Data)
 	var instances []struct {
-		Weight  float64          `json:"weight"`
+		Weight   float64           `json:"weight"`
 		Metadata map[string]string `json:"metadata"`
 	}
 	if err := json.Unmarshal(data, &instances); err != nil {

@@ -151,10 +151,10 @@ func handleSubscribeRequest(naming NamingAdapter, req Payload, clientIP string) 
 		return buildErrorResponse("SubscribeServiceResponse", err), nil
 	}
 	return buildResponse("SubscribeServiceResponse", map[string]any{
-		"resultCode":   200,
-		"success":      true,
-		"message":      "ok",
-		"serviceInfo":  result,
+		"resultCode":  200,
+		"success":     true,
+		"message":     "ok",
+		"serviceInfo": result,
 	}), nil
 }
 
@@ -177,10 +177,10 @@ func handleServiceQueryRequest(naming NamingAdapter, req Payload) (Payload, erro
 		return buildErrorResponse("QueryServiceResponse", err), nil
 	}
 	return buildResponse("QueryServiceResponse", map[string]any{
-		"resultCode":   200,
-		"success":      true,
-		"message":      "ok",
-		"serviceInfo":  result,
+		"resultCode":  200,
+		"success":     true,
+		"message":     "ok",
+		"serviceInfo": result,
 	}), nil
 }
 
@@ -190,10 +190,10 @@ func handleServiceListRequest(naming NamingAdapter, req Payload) (Payload, error
 		return buildErrorResponse("ServiceListResponse", err), nil
 	}
 	return buildResponse("ServiceListResponse", map[string]any{
-		"resultCode": 200,
-		"success":    true,
-		"message":    "ok",
-		"count":      result.(map[string]any)["count"],
+		"resultCode":   200,
+		"success":      true,
+		"message":      "ok",
+		"count":        result.(map[string]any)["count"],
 		"serviceInfos": result.(map[string]any)["services"],
 	}), nil
 }
@@ -351,7 +351,7 @@ func buildErrorResponse(typeName string, err error) Payload {
 		},
 		Body: Any{
 			TypeURL: "type.googleapis.com/" + typeName,
-			Value:   encodeResponseData(map[string]any{
+			Value: encodeResponseData(map[string]any{
 				"resultCode": 500,
 				"errorCode":  500,
 				"success":    false,
@@ -459,9 +459,9 @@ func buildConnectionResponse(typeName string, req Payload) Payload {
 	switch typeName {
 	case "ConnectionSetupRequest":
 		return buildResponse("ConnectionSetupResponse", map[string]any{
-			"resultCode": 200,
-			"success":    true,
-			"message":    "ok",
+			"resultCode":   200,
+			"success":      true,
+			"message":      "ok",
 			"connectionId": req.Metadata.Headers["connectionId"],
 		})
 	case "HealthCheckRequest":

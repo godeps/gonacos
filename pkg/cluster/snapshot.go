@@ -8,9 +8,9 @@ import (
 // clusterSnapshot captures members, plugins, and log level. Mode is owned by
 // the constructor and not restored.
 type clusterSnapshot struct {
-	Members  []memberSnap  `json:"members"`
-	Plugins  []pluginSnap  `json:"plugins"`
-	LogLevel string        `json:"logLevel"`
+	Members  []memberSnap `json:"members"`
+	Plugins  []pluginSnap `json:"plugins"`
+	LogLevel string       `json:"logLevel"`
 }
 
 type memberSnap struct {

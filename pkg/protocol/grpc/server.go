@@ -62,12 +62,12 @@ type BiStreamHandler func(ctx context.Context, recv func() (Payload, error), sen
 
 // Server is a minimal gRPC server over HTTP/2 using net/http.
 type Server struct {
-	mu        sync.RWMutex
-	unary     map[string]Handler
-	stream    map[string]StreamHandler
-	bistream  map[string]BiStreamHandler
-	server    *http.Server
-	listener  net.Listener
+	mu       sync.RWMutex
+	unary    map[string]Handler
+	stream   map[string]StreamHandler
+	bistream map[string]BiStreamHandler
+	server   *http.Server
+	listener net.Listener
 }
 
 // NewServer returns an empty gRPC server.

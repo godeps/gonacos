@@ -396,8 +396,8 @@ func TestE2EMcpServerLifecycle(t *testing.T) {
 func TestE2EPipelineCRUD(t *testing.T) {
 	id := "e2e-pipe-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	form := url.Values{
-		"pipelineId": {id},
-		"name":       {id},
+		"pipelineId":  {id},
+		"name":        {id},
 		"description": {"e2e pipeline"},
 	}
 	status, body := postForm(t, "/v3/admin/ai/pipelines/create", form)

@@ -206,6 +206,10 @@ func New(opts ...Option) (*Server, error) {
 	httpAddr := o.resolveAddr()
 	httpLn, err := net.Listen("tcp", httpAddr)
 	if err != nil {
+		// stopPeriodic launched above; without this call the snapshot
+		// goroutine survives [New] failure and outlives the test or
+		// embedder that called [New].
+		stopPeriodic()
 		_ = redisClient.Close()
 		if embeddedRedis != nil {
 			_ = embeddedRedis.Close()
@@ -218,6 +222,7 @@ func New(opts ...Option) (*Server, error) {
 	grpcAddr := o.resolveGRPCAddr()
 	grpcLn, err := net.Listen("tcp", grpcAddr)
 	if err != nil {
+		stopPeriodic()
 		_ = httpLn.Close()
 		_ = redisClient.Close()
 		if embeddedRedis != nil {

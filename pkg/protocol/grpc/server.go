@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -68,6 +69,10 @@ type Server struct {
 	bistream map[string]BiStreamHandler
 	server   *http.Server
 	listener net.Listener
+
+	// Logf, when non-nil, is called for diagnostic messages (currently
+	// panic recovery). When nil, panics are still recovered but not logged.
+	Logf func(format string, args ...any)
 }
 
 // NewServer returns an empty gRPC server.
@@ -237,6 +242,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUnary(ctx context.Context, w http.ResponseWriter, r *http.Request, h Handler) {
+	defer recoverGRPC(s, w, nil, r)
 	frame, err := ReadFrame(r.Body)
 	if err != nil && !errors.Is(err, io.EOF) {
 		writeGRPCStatus(w, StatusInternal, "read frame: "+err.Error())
@@ -257,6 +263,16 @@ func (s *Server) handleUnary(ctx context.Context, w http.ResponseWriter, r *http
 }
 
 func (s *Server) handleStream(ctx context.Context, w http.ResponseWriter, r *http.Request, h StreamHandler) {
+	defer func() {
+		if rv := recover(); rv != nil {
+			s.logPanic(rv, r)
+			// Headers may or may not be written yet. tryStreamStatus
+			// sets the grpc-status trailer if the response is still
+			// writable; otherwise it's a no-op (the connection will
+			// be torn down by the runtime).
+			tryStreamStatus(w, StatusInternal, "internal server error")
+		}
+	}()
 	frame, err := ReadFrame(r.Body)
 	if err != nil && !errors.Is(err, io.EOF) {
 		writeGRPCStatus(w, StatusInternal, "read frame: "+err.Error())
@@ -291,6 +307,12 @@ func (s *Server) handleStream(ctx context.Context, w http.ResponseWriter, r *htt
 }
 
 func (s *Server) handleBiStream(ctx context.Context, w http.ResponseWriter, r *http.Request, h BiStreamHandler) {
+	defer func() {
+		if rv := recover(); rv != nil {
+			s.logPanic(rv, r)
+			tryStreamStatus(w, StatusInternal, "internal server error")
+		}
+	}()
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeGRPCStatus(w, StatusInternal, "streaming not supported")
@@ -325,6 +347,43 @@ func statusFromError(err error) (int, string) {
 		return se.Code, se.Message
 	}
 	return StatusInternal, err.Error()
+}
+
+// recoverGRPC is the deferred recover() for unary handlers. On panic it
+// logs (if Logf is set) and writes a gRPC INTERNAL status. For unary calls
+// the response hasn't started yet, so writeGRPCStatus can always emit a
+// proper status.
+func recoverGRPC(s *Server, w http.ResponseWriter, _ any, r *http.Request) {
+	rv := recover()
+	if rv == nil {
+		return
+	}
+	if s != nil {
+		s.logPanic(rv, r)
+	}
+	writeGRPCStatus(w, StatusInternal, "internal server error")
+}
+
+// logPanic emits a single log line with the stack trace when Logf is set.
+func (s *Server) logPanic(rv any, r *http.Request) {
+	if s.Logf == nil {
+		return
+	}
+	s.Logf("grpc panic recovered: %v\n%s %s %s", rv, debug.Stack(), r.Method, r.URL.Path)
+}
+
+// tryStreamStatus attempts to set the grpc-status trailer on a streaming
+// response that may have already started. If headers were already flushed,
+// the trailer may not reach the client, but we still try rather than
+// silently dropping the panic.
+func tryStreamStatus(w http.ResponseWriter, code int, message string) {
+	w.Header().Set("grpc-status", strconv.Itoa(code))
+	if message != "" {
+		w.Header().Set("grpc-message", message)
+	}
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func writeGRPCStatus(w http.ResponseWriter, code int, message string) {

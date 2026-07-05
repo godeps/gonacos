@@ -136,6 +136,46 @@ func TestServerUnaryHandlerReturnsErrorStatus(t *testing.T) {
 	}
 }
 
+func TestServerUnaryHandlerPanicReturnsInternal(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	var logBuf bytes.Buffer
+	srv.Logf = func(format string, args ...any) {
+		logBuf.WriteString(format)
+		logBuf.WriteByte('\n')
+	}
+	srv.RegisterUnary("Request/request", func(ctx context.Context, req Payload) (Payload, error) {
+		panic("boom")
+	})
+	go func() { _ = srv.ListenAndServe("127.0.0.1:0") }()
+	for i := 0; i < 50 && srv.Addr() == nil; i++ {
+		time.Sleep(2 * time.Millisecond)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	req := Payload{Metadata: Metadata{Type: "TestRequest"}}
+	body := encodeGRPCRequestBody(req)
+	resp, err := http.Post(
+		"http://"+srv.Addr().String()+"/Request/request",
+		"application/grpc",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.Header.Get("grpc-status") != "13" {
+		t.Fatalf("grpc-status = %v, want 13 (Internal)", resp.Header.Get("grpc-status"))
+	}
+	if !strings.Contains(logBuf.String(), "grpc panic recovered") {
+		t.Errorf("log missing 'grpc panic recovered': %s", logBuf.String())
+	}
+}
+
 func TestServerGracefulShutdown(t *testing.T) {
 	t.Parallel()
 	srv := NewServer()

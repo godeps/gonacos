@@ -106,6 +106,11 @@ func New(opts ...Option) (*Server, error) {
 		push.InstallCallbacks()
 	}
 	grpcSrv := app.SetupGRPCServerWithPush(bundle, push)
+	// Forward gRPC panic recovery logs to the same logger the HTTP side
+	// uses, so a single log stream covers both protocols.
+	grpcSrv.Logf = func(format string, args ...any) {
+		logger.Warnf(format, args...)
+	}
 
 	// Readiness checker: ping the Redis client (external or embedded).
 	// Returns 503 when Redis is unreachable so load balancers stop sending

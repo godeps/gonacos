@@ -541,6 +541,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := context.WithValue(r.Context(), clientIPKey{}, clientIPFromRequest(r))
 
 	start := time.Now()
+	// Wrap the response writer so we can record the response byte count
+	// for gonacos_grpc_response_bytes. The wrapper is transparent — it
+	// forwards Header(), WriteHeader(), Write(), and Flush() to the
+	// underlying writer while tallying bytes written.
+	rec := &grpcResponseRecorder{ResponseWriter: w}
 
 	// Per-IP rate limiting. A false return yields RESOURCE_EXHAUSTED without
 	// invoking the handler, so a flooded peer cannot starve legitimate
@@ -550,7 +555,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ip := ClientIPFromContext(ctx)
 		if !s.RateLimiter.Allow(ip) {
 			s.recordRateLimitRejection()
-			writeGRPCStatus(w, StatusResourceExhausted, "rate limit exceeded for client IP")
+			writeGRPCStatus(rec, StatusResourceExhausted, "rate limit exceeded for client IP")
 			if s.Logf != nil {
 				s.Logf("grpc %s %s status=%d duration=%s remote=%s (rate-limited)",
 					r.Method, r.URL.Path, StatusResourceExhausted,
@@ -561,14 +566,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case hasUnary:
-		s.handleUnary(ctx, w, r, unary)
+		s.handleUnary(ctx, rec, r, unary)
 	case hasStream:
-		s.handleStream(ctx, w, r, stream)
+		s.handleStream(ctx, rec, r, stream)
 	case hasBi:
-		s.handleBiStream(ctx, w, r, bistream)
+		s.handleBiStream(ctx, rec, r, bistream)
 	}
 	if s.Logf != nil {
-		status := w.Header().Get("grpc-status")
+		status := rec.Header().Get("grpc-status")
 		if status == "" {
 			status = "?"
 		}
@@ -576,7 +581,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			r.Method, r.URL.Path, status, formatGRPCDuration(time.Since(start)), r.RemoteAddr)
 	}
 	if s.MetricsRegistry != nil {
-		status := w.Header().Get("grpc-status")
+		status := rec.Header().Get("grpc-status")
 		if status == "" {
 			status = "?"
 		}
@@ -588,6 +593,43 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			map[string]string{"method": r.URL.Path},
 			grpcLatencyBuckets,
 		).Observe(time.Since(start).Milliseconds())
+		// Response size distribution. Operators use this to spot
+		// regressions where a response balloons from 1KB to 100KB
+		// (e.g., a service list returning unbounded results), and
+		// to estimate bandwidth for capacity planning. The +Inf
+		// bucket captures anything beyond the largest boundary.
+		s.MetricsRegistry.Histogram("gonacos_grpc_response_bytes",
+			map[string]string{"method": r.URL.Path},
+			HTTPBytesBuckets(),
+		).Observe(int64(rec.bytes))
+	}
+}
+
+// grpcResponseRecorder wraps an http.ResponseWriter to count bytes
+// written, for the gonacos_grpc_response_bytes histogram. The wrapper
+// is transparent — it forwards Header(), WriteHeader(), Write(), and
+// Flush() to the underlying writer while tallying bytes written via
+// Write(). gRPC error responses (writeGRPCStatus) only set headers and
+// trailers, so their byte count is 0; normal responses write the
+// payload + grpc-status trailer, which is what operators want to see
+// in the size distribution.
+type grpcResponseRecorder struct {
+	http.ResponseWriter
+	bytes int
+}
+
+func (r *grpcResponseRecorder) Write(p []byte) (int, error) {
+	n, err := r.ResponseWriter.Write(p)
+	r.bytes += n
+	return n, err
+}
+
+// Flush forwards to the underlying writer when it implements http.Flusher,
+// so streaming handlers that call flusher.Flush() still work through the
+// wrapper.
+func (r *grpcResponseRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
 	}
 }
 

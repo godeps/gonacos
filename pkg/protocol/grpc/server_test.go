@@ -578,6 +578,29 @@ func TestServerMetricsRegistryIncrements(t *testing.T) {
 	if hCount != 1 {
 		t.Fatalf("histogram observations = %d, want 1", hCount)
 	}
+
+	// Response bytes histogram should also have one observation for
+	// /Request/request. The observed value is the byte count of the
+	// response payload written by the unary handler. The handler
+	// returns a Payload{Metadata: Metadata{Type: "TestResponse"}}, so
+	// the response is non-empty and the observed value should be > 0.
+	rkey := "gonacos_grpc_response_bytes//Request/request"
+	registry.mu.Lock()
+	rh, rhok := registry.histos[rkey]
+	registry.mu.Unlock()
+	if !rhok {
+		t.Fatalf("no response-bytes histogram recorded for key %q (histos: %v)", rkey, registry.histos)
+	}
+	rh.mu.Lock()
+	rhCount := rh.obsCount
+	rhObserved := rh.observed
+	rh.mu.Unlock()
+	if rhCount != 1 {
+		t.Fatalf("response-bytes histogram observations = %d, want 1", rhCount)
+	}
+	if rhObserved <= 0 {
+		t.Fatalf("response-bytes observed = %d, want > 0 (handler wrote a non-empty payload)", rhObserved)
+	}
 }
 
 // TestServerUnaryHandlerPanicIncrementsMetric verifies that a panicking

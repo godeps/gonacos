@@ -169,9 +169,15 @@ func New(opts ...Option) (*Server, error) {
 
 	httpHandler := app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry, readiness, o.buildLoginThrottle())
 
-	// Request ID must be the outermost middleware so every response —
-	// including 429s from rate limiting and 413s from body caps — carries
-	// a correlation ID for log tracing.
+	// Recovery wraps the innermost handler so panics produce a 500 JSON
+	// response with the request ID instead of crashing the connection.
+	// Placed inside request ID so the deferred recover() can read the rid
+	// from the context.
+	httpHandler = newRecoveryMiddleware(logger, httpHandler)
+
+	// Request ID must wrap recovery so the rid is available in the context
+	// when recovery's deferred function runs, and so every response —
+	// including 500s from panics — carries the X-Request-Id header.
 	httpHandler = newRequestIDMiddleware(httpHandler)
 
 	// Per-IP rate limiting. Disabled when rps <= 0. The background cleanup
@@ -188,7 +194,7 @@ func New(opts ...Option) (*Server, error) {
 
 	httpHandler = newRequestLogMiddleware(logger, o.HTTPVerboseLog, httpHandler)
 
-	// Security headers outermost so every response — including 429/413/404
+	// Security headers outermost so every response — including 429/413/500
 	// produced by the upper middlewares — carries nosniff, frame-options,
 	// referrer-policy, and (under TLS) HSTS. The inner handler can still
 	// override any header (e.g., set X-Frame-Options: DENY on a specific

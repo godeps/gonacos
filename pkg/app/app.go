@@ -170,7 +170,7 @@ func NewHandlerWithServicesAndRegistry(root string, services *ServiceBundle, coo
 	coord.Register(aiSvc)
 	coord.Register(clusterSvc)
 
-	registerNamespaceRoutes(register, namespaceSvc)
+	registerNamespaceRoutes(register, namespaceSvc, configSvc)
 	registerConfigRoutes(register, configSvc)
 	registerNamingRoutes(register, namingSvc)
 	registerAuthRoutes(register, authSvc, loginThrottle)

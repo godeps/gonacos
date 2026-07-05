@@ -424,6 +424,37 @@ func (s *Service) usageLocked(namespaceID, groupName string) (count int, size in
 	return count, size
 }
 
+// CountByNamespace returns the number of config items in the given namespace.
+// Returns 0 for namespaces with no published configs. Beta/gray variants
+// (tracked separately in betaItems) are not double-counted — each
+// (group, dataID) tuple counts once.
+func (s *Service) CountByNamespace(namespaceID string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for k := range s.items {
+		if k.namespaceID == namespaceID {
+			n++
+		}
+	}
+	return n
+}
+
+// CountAllByNamespace returns a map from namespace ID to config count for
+// every namespace that has at least one config. Namespaces with zero configs
+// are absent from the map; callers should treat a missing key as zero. This
+// is the batch form of [CountByNamespace] for list endpoints that need to
+// annotate every namespace without an N×M scan.
+func (s *Service) CountAllByNamespace() map[string]int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	counts := make(map[string]int, len(s.items))
+	for k := range s.items {
+		counts[k.namespaceID]++
+	}
+	return counts
+}
+
 func (s *Service) Publish(req PublishRequest) error {
 	if strings.TrimSpace(req.BetaIPs) != "" {
 		return s.PublishBeta(req)

@@ -8,18 +8,20 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/godeps/gonacos/pkg/config"
 	"github.com/godeps/gonacos/pkg/namespace"
 	"github.com/godeps/gonacos/pkg/protocol"
 )
 
 type namespaceHandler struct {
 	service *namespace.Service
+	configs *config.Service
 	admin   bool
 }
 
-func registerNamespaceRoutes(register func(string, string, http.HandlerFunc), service *namespace.Service) {
-	console := namespaceHandler{service: service}
-	admin := namespaceHandler{service: service, admin: true}
+func registerNamespaceRoutes(register func(string, string, http.HandlerFunc), service *namespace.Service, configs *config.Service) {
+	console := namespaceHandler{service: service, configs: configs}
+	admin := namespaceHandler{service: service, configs: configs, admin: true}
 
 	for _, base := range []string{"/v3/console/core/namespace"} {
 		register(http.MethodGet, base, console.detail)
@@ -90,7 +92,21 @@ func (h namespaceHandler) detail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h namespaceHandler) list(w http.ResponseWriter, r *http.Request) {
-	protocol.WriteResult(w, http.StatusOK, h.service.List())
+	items := h.service.List()
+	// Populate ConfigCount so the console can show how many configs each
+	// namespace holds. Without this the field is always 0 — the namespace
+	// service does not own config data, so we ask the config service for a
+	// single batch count and merge it in. Namespaces with no configs keep
+	// the zero value the service already set.
+	if h.configs != nil && len(items) > 0 {
+		counts := h.configs.CountAllByNamespace()
+		for i := range items {
+			if n, ok := counts[items[i].Namespace]; ok {
+				items[i].ConfigCount = n
+			}
+		}
+	}
+	protocol.WriteResult(w, http.StatusOK, items)
 }
 
 func (h namespaceHandler) exists(w http.ResponseWriter, r *http.Request) {

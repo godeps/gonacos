@@ -38,6 +38,8 @@ var (
 	ErrMissingGrayName  = errors.New("grayName is required")
 	ErrHistoryNotFound  = errors.New("source must not be null")
 	ErrAccessDenied     = errors.New("access denied")
+	ErrConfigTooLarge   = errors.New("config content exceeds maxSize limit")
+	ErrQuotaExceeded    = errors.New("config count exceeds quota limit")
 )
 
 type Item struct {
@@ -424,6 +426,40 @@ func (s *Service) usageLocked(namespaceID, groupName string) (count int, size in
 	return count, size
 }
 
+// capacityLocked returns the effective Capacity for a namespace/group,
+// applying defaults when no explicit capacity has been set.
+func (s *Service) capacityLocked(namespaceID, groupName string) Capacity {
+	capKey := key{namespaceID: namespaceID, groupName: groupName, dataID: ""}
+	cap, ok := s.capacity[capKey]
+	if !ok {
+		return Capacity{
+			NamespaceID:  namespaceID,
+			GroupName:    groupName,
+			Quota:        1000,
+			MaxSize:      100 * 1024,
+			MaxAggrCount: 1000,
+			MaxAggrSize:  100 * 1024,
+		}
+	}
+	return cap
+}
+
+// enforceCapacityLocked verifies the publish would not exceed the per-group
+// maxSize or quota. It must be called with s.mu held.
+func (s *Service) enforceCapacityLocked(namespaceID, groupName string, content string, isNewItem bool) error {
+	cap := s.capacityLocked(namespaceID, groupName)
+	if cap.MaxSize > 0 && len(content) > cap.MaxSize {
+		return ErrConfigTooLarge
+	}
+	if isNewItem && cap.Quota > 0 {
+		count, _ := s.usageLocked(namespaceID, groupName)
+		if count >= cap.Quota {
+			return ErrQuotaExceeded
+		}
+	}
+	return nil
+}
+
 // CountByNamespace returns the number of config items in the given namespace.
 // Returns 0 for namespaces with no published configs. Beta/gray variants
 // (tracked separately in betaItems) are not double-counted — each
@@ -474,6 +510,10 @@ func (s *Service) Publish(req PublishRequest) error {
 
 	s.mu.Lock()
 	item, ok := s.items[itemKey]
+	if err := s.enforceCapacityLocked(req.NamespaceID, req.GroupName, req.Content, !ok); err != nil {
+		s.mu.Unlock()
+		return err
+	}
 	if !ok {
 		item.ID = s.nextIDString()
 		item.NamespaceID = req.NamespaceID
@@ -523,6 +563,9 @@ func (s *Service) ApplyRemotePublish(req PublishRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	item, ok := s.items[itemKey]
+	if err := s.enforceCapacityLocked(req.NamespaceID, req.GroupName, req.Content, !ok); err != nil {
+		return err
+	}
 	if !ok {
 		item.ID = s.nextIDString()
 		item.NamespaceID = req.NamespaceID
@@ -629,6 +672,12 @@ func (s *Service) PublishGray(req GrayRequest) error {
 	}
 
 	s.mu.Lock()
+	// Gray configs live in betaItems, not items, so they don't count toward
+	// the per-group Quota. Only enforce the content size limit.
+	if err := s.enforceCapacityLocked(req.NamespaceID, req.GroupName, req.Content, false); err != nil {
+		s.mu.Unlock()
+		return err
+	}
 	item.ID = s.nextIDString()
 	gk := grayKey{namespaceID: item.NamespaceID, groupName: item.GroupName, dataID: item.DataID, grayName: req.GrayName}
 	s.betaItems[gk] = BetaItem{

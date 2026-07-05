@@ -144,6 +144,7 @@ Options (`server.With*`):
 | `WithHTTPVerboseLog(bool)` | `false` | When `true`, log every HTTP request including health/metrics probes. When `false`, noisy paths are excluded. |
 | `WithLoginThrottle(maxFailures, failWindow, lockoutDuration)` | `0` (disabled) | Per-(client-IP, username) brute-force lockout on `/v3/auth/user/login`. Recommended production: `5, 5m, 15m`. |
 | `WithSnapshotBackupCount(n)` | `0` (disabled) | Retain the prior N disk-dump snapshots as `snapshot.1.json`, `snapshot.2.json`, ... so a corrupted latest snapshot can be recovered. Recommended: `5`. |
+| `WithShutdownTimeout(d)` | `30s` | Maximum time Shutdown waits for in-flight handlers to complete before forcibly closing connections. Pass `-1` to wait forever (not recommended). |
 
 Environment variable fallbacks (used when the corresponding option is not set):
 
@@ -164,6 +165,7 @@ Environment variable fallbacks (used when the corresponding option is not set):
 | `GONACOS_LOGIN_FAIL_WINDOW` | `WithLoginThrottle` fail window (Go duration; default `5m`) |
 | `GONACOS_LOGIN_LOCKOUT_DURATION` | `WithLoginThrottle` lockout duration (Go duration; default `15m`) |
 | `GONACOS_SNAPSHOT_BACKUP_COUNT` | `WithSnapshotBackupCount` (int; default `0` = no rotation) |
+| `GONACOS_SHUTDOWN_TIMEOUT` | `WithShutdownTimeout` (Go duration; default `30s`; `-1` = wait forever) |
 
 ## Production hardening
 

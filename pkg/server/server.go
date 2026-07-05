@@ -280,13 +280,26 @@ func (s *Server) Start(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		return s.Shutdown(context.Background())
+		return s.shutdownWithTimeout()
 	case err := <-errc:
-		if cerr := s.Shutdown(context.Background()); cerr != nil {
+		if cerr := s.shutdownWithTimeout(); cerr != nil {
 			s.logger.Warnf("shutdown after serve error: %v", cerr)
 		}
 		return err
 	}
+}
+
+// shutdownWithTimeout calls Shutdown with a context bounded by the
+// configured shutdown timeout. A stuck handler cannot block the shutdown
+// past the timeout — after that, connections are forcibly closed.
+func (s *Server) shutdownWithTimeout() error {
+	timeout := s.opts.resolveShutdownTimeout()
+	if timeout < 0 {
+		return s.Shutdown(context.Background())
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return s.Shutdown(ctx)
 }
 
 // Shutdown flushes the snapshot, stops cluster sync, and closes the HTTP

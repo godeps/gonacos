@@ -48,6 +48,13 @@ type options struct {
 	// corrupted or accidentally-erased latest snapshot can be recovered
 	// from the previous one. Zero (default) disables rotation.
 	SnapshotBackupCount int
+
+	// ShutdownTimeout is the maximum time Shutdown will wait for in-flight
+	// HTTP/gRPC handlers to complete before forcibly closing connections.
+	// Zero falls back to resolveShutdownTimeout (30s default). A negative
+	// value disables the timeout (wait forever — not recommended in
+	// production, as a stuck handler would block shutdown indefinitely).
+	ShutdownTimeout time.Duration
 }
 
 // Option configures a Server at construction time. Pass to [New].
@@ -198,6 +205,16 @@ func WithLoginThrottle(maxFailures int, failWindow, lockoutDuration time.Duratio
 // value: 5. Zero (default) disables rotation.
 func WithSnapshotBackupCount(n int) Option {
 	return func(o *options) { o.SnapshotBackupCount = n }
+}
+
+// WithShutdownTimeout sets the maximum time Shutdown will wait for in-flight
+// HTTP/gRPC handlers to complete before forcibly closing connections. The
+// default is 30s — long enough for legitimate long-poll responses to drain,
+// short enough that a stuck handler doesn't block a rolling restart.
+// Pass a negative value to disable (wait forever — not recommended in
+// production).
+func WithShutdownTimeout(d time.Duration) Option {
+	return func(o *options) { o.ShutdownTimeout = d }
 }
 
 func (o *options) resolveAddr() string {
@@ -437,6 +454,20 @@ func (o *options) resolveSnapshotBackupCount() int {
 		}
 	}
 	return 0
+}
+
+// resolveShutdownTimeout returns the shutdown timeout. Defaults to 30s. A
+// negative return value disables the timeout (wait forever).
+func (o *options) resolveShutdownTimeout() time.Duration {
+	if o.ShutdownTimeout != 0 {
+		return o.ShutdownTimeout
+	}
+	if v := os.Getenv("GONACOS_SHUTDOWN_TIMEOUT"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d != 0 {
+			return d
+		}
+	}
+	return 30 * time.Second
 }
 
 // splitHostPort splits an address into host and port. Returns "127.0.0.1" and

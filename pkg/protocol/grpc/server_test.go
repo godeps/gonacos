@@ -338,3 +338,76 @@ func TestServerRejectsOversizedFrame(t *testing.T) {
 		t.Fatalf("grpc-status = %v, want 8 (RESOURCE_EXHAUSTED)", resp.Header.Get("grpc-status"))
 	}
 }
+
+// stubRateLimiter is a test ClientRateLimiter that denies all requests
+// after the first allowThreshold calls. Used to verify the gRPC server
+// returns RESOURCE_EXHAUSTED when the limiter rejects a peer.
+type stubRateLimiter struct {
+	mu      sync.Mutex
+	calls   int
+	allowAt int
+}
+
+func (s *stubRateLimiter) Allow(string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	return s.calls <= s.allowAt
+}
+
+// TestServerRateLimitedReturnsResourceExhausted verifies that when the
+// per-IP rate limiter rejects a peer, the server returns RESOURCE_EXHAUSTED
+// (gRPC status 8) without invoking the handler.
+func TestServerRateLimitedReturnsResourceExhausted(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	limiter := &stubRateLimiter{allowAt: 1} // allow first, deny rest
+	srv.RateLimiter = limiter
+	handlerCalled := 0
+	srv.RegisterUnary("Request/request", func(ctx context.Context, req Payload) (Payload, error) {
+		handlerCalled++
+		return Payload{Metadata: Metadata{Type: "TestResponse"}}, nil
+	})
+	go func() { _ = srv.ListenAndServe("127.0.0.1:0") }()
+	for i := 0; i < 50 && srv.Addr() == nil; i++ {
+		time.Sleep(2 * time.Millisecond)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	body := encodeGRPCRequestBody(Payload{Metadata: Metadata{Type: "TestRequest"}})
+
+	// First request: allowed, handler runs.
+	resp1, err := http.Post(
+		"http://"+srv.Addr().String()+"/Request/request",
+		"application/grpc",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		t.Fatalf("post1: %v", err)
+	}
+	resp1.Body.Close()
+	if resp1.Header.Get("grpc-status") != "0" {
+		t.Fatalf("grpc-status1 = %v, want 0", resp1.Header.Get("grpc-status"))
+	}
+
+	// Second request: denied, RESOURCE_EXHAUSTED, handler not called.
+	resp2, err := http.Post(
+		"http://"+srv.Addr().String()+"/Request/request",
+		"application/grpc",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		t.Fatalf("post2: %v", err)
+	}
+	resp2.Body.Close()
+	if resp2.Header.Get("grpc-status") != "8" {
+		t.Fatalf("grpc-status2 = %v, want 8 (RESOURCE_EXHAUSTED)", resp2.Header.Get("grpc-status"))
+	}
+	if handlerCalled != 1 {
+		t.Fatalf("handlerCalled = %d, want 1 (denied request must not invoke handler)", handlerCalled)
+	}
+}

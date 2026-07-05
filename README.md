@@ -180,7 +180,9 @@ configure them via options or env vars when running in production.
   layer-7 proxy get per-client buckets. Idle buckets are reaped every 5
   minutes so a spoofed-IP attack can't grow the bucket map unbounded.
   Legitimate SDK traffic is low-volume per client, so a `100 rps / 200 burst`
-  cap is generous.
+  cap is generous. The same limiter is wired into the gRPC server, so a
+  single client IP shares one bucket across both protocols — an SDK client
+  cannot bypass its HTTP quota by switching to gRPC.
 - **Request body cap** (`WithHTTPMaxBody`, default 10 MiB): wraps the request
   body in `http.MaxBytesReader` so an oversized POST returns 413 instead of
   OOMing the server.

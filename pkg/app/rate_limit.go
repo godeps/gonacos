@@ -52,6 +52,16 @@ func (r *rateLimiter) allow(clientIP string) bool {
 	return b.limiter.Allow()
 }
 
+// Allow satisfies the grpc.ClientRateLimiter interface so the same
+// per-IP token-bucket pool can cap both HTTP and gRPC traffic. When the
+// server wires the same *rateLimiter into both NewRateLimitMiddleware
+// (HTTP) and grpc.Server.RateLimiter (gRPC), a single client IP shares
+// one bucket across both protocols — an SDK client cannot bypass its
+// HTTP quota by switching to gRPC.
+func (r *rateLimiter) Allow(clientIP string) bool {
+	return r.allow(clientIP)
+}
+
 // cleanup drops buckets that haven't been touched within maxIdle. Designed
 // to be called periodically (e.g. every 5 minutes) from a background
 // goroutine so the buckets map doesn't grow unbounded under spoofed-IP

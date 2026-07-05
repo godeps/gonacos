@@ -44,7 +44,10 @@ configs per namespace by default). HTTP-level limits protect against abuse:
   POST/PUT bodies return 413 instead of OOMing the server.
 - **Per-IP rate limit** (`GONACOS_HTTP_RATE_RPS`, default disabled): token
   bucket per client IP, honored with burst = 2x rps. Exceeding the limit
-  returns 429 with a `Retry-After` header.
+  returns 429 (HTTP) or RESOURCE_EXHAUSTED (gRPC status 8) with a
+  `Retry-After` header. The same limiter covers both protocols, so a single
+  client IP shares one bucket across HTTP and gRPC — an SDK client cannot
+  bypass its HTTP quota by switching protocols.
 - **HTTP timeouts**: `ReadHeaderTimeout` 5s, `WriteTimeout`
   (`GONACOS_HTTP_WRITE_TIMEOUT`, default 30s), `IdleTimeout`
   (`GONACOS_HTTP_IDLE_TIMEOUT`, default 120s). The gRPC HTTP/2 server

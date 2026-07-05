@@ -192,12 +192,15 @@ func New(opts ...Option) (*Server, error) {
 
 	// Per-IP rate limiting. Disabled when rps <= 0. The background cleanup
 	// goroutine reaps idle buckets so the map doesn't grow unbounded under
-	// spoofed-IP attacks.
+	// spoofed-IP attacks. The same limiter is wired into the gRPC server so
+	// a single client IP shares one token bucket across both HTTP and gRPC
+	// — an SDK client cannot bypass its HTTP quota by switching protocols.
 	var stopRateGC func()
 	if rps := o.resolveHTTPRateRPS(); rps > 0 {
 		rl := app.NewRateLimiter(rps, o.resolveHTTPRateBurst())
 		stopRateGC = rl.StartCleanup(5*time.Minute, 10*time.Minute)
 		httpHandler = app.NewRateLimitMiddleware(rl, httpHandler)
+		grpcSrv.RateLimiter = rl
 	}
 
 	httpHandler = app.NewMaxBodyMiddleware(o.resolveHTTPMaxBody(), httpHandler)

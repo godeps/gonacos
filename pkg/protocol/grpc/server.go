@@ -61,6 +61,22 @@ type StreamHandler func(ctx context.Context, req Payload, send func(Payload) err
 // reads request frames from recv and sends response frames via send.
 type BiStreamHandler func(ctx context.Context, recv func() (Payload, error), send func(Payload) error) error
 
+// ClientRateLimiter is the per-IP rate-limiting interface the gRPC server
+// calls before dispatching a request. Implementations must be safe for
+// concurrent use. The server calls Allow(clientIP) once per incoming HTTP/2
+// request — for unary RPCs that's once per request, for streaming RPCs
+// that's once per long-lived stream. A false return yields
+// RESOURCE_EXHAUSTED without invoking the handler, so a flooded peer cannot
+// starve legitimate clients or drive up goroutine count.
+//
+// Implementations typically reuse the same token-bucket pool as the HTTP
+// side so a single IP's HTTP and gRPC traffic share one bucket — set this
+// to the same *app.rateLimiter passed to NewRateLimitMiddleware to enforce
+// a unified per-IP cap across both protocols.
+type ClientRateLimiter interface {
+	Allow(clientIP string) bool
+}
+
 // Server is a minimal gRPC server over HTTP/2 using net/http.
 type Server struct {
 	mu       sync.RWMutex
@@ -76,6 +92,12 @@ type Server struct {
 	// malicious peer can claim a 4 GiB body and drive the process into OOM
 	// before the handler runs).
 	MaxFrameBytes int
+
+	// RateLimiter, when non-nil, is called once per incoming HTTP/2 request
+	// with the client IP. A false return yields RESOURCE_EXHAUSTED without
+	// invoking the handler. Typically the same *app.rateLimiter used by the
+	// HTTP side so a single IP's HTTP + gRPC traffic share one bucket.
+	RateLimiter ClientRateLimiter
 
 	// Logf, when non-nil, is called for diagnostic messages (currently
 	// panic recovery). When nil, panics are still recovered but not logged.
@@ -251,6 +273,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := context.WithValue(r.Context(), clientIPKey{}, clientIPFromRequest(r))
 
 	start := time.Now()
+
+	// Per-IP rate limiting. A false return yields RESOURCE_EXHAUSTED without
+	// invoking the handler, so a flooded peer cannot starve legitimate
+	// clients or drive up goroutine count. Unary RPCs consume one token per
+	// request; streaming RPCs consume one token per long-lived stream.
+	if s.RateLimiter != nil {
+		ip := ClientIPFromContext(ctx)
+		if !s.RateLimiter.Allow(ip) {
+			writeGRPCStatus(w, StatusResourceExhausted, "rate limit exceeded for client IP")
+			if s.Logf != nil {
+				s.Logf("grpc %s %s status=%d duration=%s remote=%s (rate-limited)",
+					r.Method, r.URL.Path, StatusResourceExhausted,
+					formatGRPCDuration(time.Since(start)), r.RemoteAddr)
+			}
+			return
+		}
+	}
 	switch {
 	case hasUnary:
 		s.handleUnary(ctx, w, r, unary)

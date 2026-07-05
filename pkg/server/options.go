@@ -29,6 +29,11 @@ type options struct {
 	HTTPMaxBodyBytes int64
 	HTTPWriteTimeout time.Duration
 	HTTPIdleTimeout  time.Duration
+
+	// Request logging. When true, every HTTP request is logged (including
+	// health/metrics probes). When false (default), noisy paths are
+	// excluded from the log but everything else is logged.
+	HTTPVerboseLog bool
 }
 
 // Option configures a Server at construction time. Pass to [New].
@@ -149,6 +154,14 @@ func WithHTTPWriteTimeout(d time.Duration) Option {
 // not recommended in production).
 func WithHTTPIdleTimeout(d time.Duration) Option {
 	return func(o *options) { o.HTTPIdleTimeout = d }
+}
+
+// WithHTTPVerboseLog enables per-request logging including health and
+// metrics probes. Default is false: noisy paths are excluded from the log
+// but everything else (config/naming/auth/admin) is logged at one line per
+// request with method, path, status, duration, and remote address.
+func WithHTTPVerboseLog(verbose bool) Option {
+	return func(o *options) { o.HTTPVerboseLog = verbose }
 }
 
 func (o *options) resolveAddr() string {

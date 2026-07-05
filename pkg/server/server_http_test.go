@@ -75,9 +75,11 @@ func TestHTTPMaxBodyEndToEnd(t *testing.T) {
 	}
 }
 
+var testHTTPClient = &http.Client{Timeout: 5 * time.Second}
+
 func get(t *testing.T, url string) int {
 	t.Helper()
-	resp, err := http.Get(url)
+	resp, err := testHTTPClient.Get(url)
 	if err != nil {
 		t.Fatalf("GET %s: %v", url, err)
 	}
@@ -88,7 +90,7 @@ func get(t *testing.T, url string) int {
 
 func post(t *testing.T, url string, body io.Reader) int {
 	t.Helper()
-	resp, err := http.Post(url, "application/octet-stream", body)
+	resp, err := testHTTPClient.Post(url, "application/octet-stream", body)
 	if err != nil {
 		t.Fatalf("POST %s: %v", url, err)
 	}
@@ -125,5 +127,51 @@ func TestHTTPTimeoutsAreSet(t *testing.T) {
 	base := fmt.Sprintf("http://%s/v3/console/health/liveness", srv.HTTPAddr())
 	if code := get(t, base); code != http.StatusOK {
 		t.Fatalf("health check after timeout config: got %d, want %d", code, http.StatusOK)
+	}
+}
+
+// TestReadinessReturns503WhenRedisDown verifies that the readiness probe
+// returns 503 when the Redis client is closed (simulating a Redis outage).
+// This is the production-critical behavior: load balancers must stop sending
+// traffic to a node that can't persist state.
+func TestReadinessReturns503WhenRedisDown(t *testing.T) {
+	srv, err := server.New(
+		server.WithAddr("127.0.0.1:0"),
+		server.WithGRPCAddr("127.0.0.1:0"),
+		server.WithRoot(".."),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer func() { _ = srv.Shutdown(context.Background()) }()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = srv.Start(ctx) }()
+
+	base := "http://" + srv.HTTPAddr()
+
+	// Sanity check: readiness is 200 while Redis is up.
+	if code := get(t, base+"/v3/console/health/readiness"); code != http.StatusOK {
+		t.Fatalf("readiness with Redis up: got %d, want %d", code, http.StatusOK)
+	}
+
+	// Close the Redis client to simulate an outage. The embedded Redis is
+	// still running, but the client can no longer reach it.
+	if rc := srv.RedisClient(); rc == nil {
+		t.Fatal("RedisClient() returned nil")
+	} else {
+		_ = rc.Close()
+	}
+
+	// Readiness should now return 503.
+	if code := get(t, base+"/v3/console/health/readiness"); code != http.StatusServiceUnavailable {
+		t.Fatalf("readiness with Redis down: got %d, want %d", code, http.StatusServiceUnavailable)
+	}
+
+	// Liveness should still return 200 (the process is alive; only the
+	// dependency is down).
+	if code := get(t, base+"/v3/console/health/liveness"); code != http.StatusOK {
+		t.Fatalf("liveness with Redis down: got %d, want %d", code, http.StatusOK)
 	}
 }

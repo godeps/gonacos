@@ -107,6 +107,13 @@ func New(opts ...Option) (*Server, error) {
 	}
 	grpcSrv := app.SetupGRPCServerWithPush(bundle, push)
 
+	// Readiness checker: ping the Redis client (external or embedded).
+	// Returns 503 when Redis is unreachable so load balancers stop sending
+	// traffic to a node that can't persist state.
+	readiness := app.ReadinessCheckerFunc(func(ctx context.Context) error {
+		return redisClient.Ping(ctx).Err()
+	})
+
 	var redisSync *cluster.RedisSync
 	if embeddedRedis == nil {
 		host, port := splitHostPort(o.resolveAddr())
@@ -160,7 +167,7 @@ func New(opts ...Option) (*Server, error) {
 		return nil, fmt.Errorf("grpc listen %q: %w", grpcAddr, err)
 	}
 
-	httpHandler := app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry)
+	httpHandler := app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry, readiness)
 
 	// Per-IP rate limiting. Disabled when rps <= 0. The background cleanup
 	// goroutine reaps idle buckets so the map doesn't grow unbounded under
@@ -173,6 +180,8 @@ func New(opts ...Option) (*Server, error) {
 	}
 
 	httpHandler = app.NewMaxBodyMiddleware(o.resolveHTTPMaxBody(), httpHandler)
+
+	httpHandler = newRequestLogMiddleware(logger, o.HTTPVerboseLog, httpHandler)
 
 	writeTimeout := o.resolveHTTPWriteTimeout()
 	idleTimeout := o.resolveHTTPIdleTimeout()

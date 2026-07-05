@@ -96,6 +96,13 @@ type options struct {
 	// Production deployments should set a token to avoid leaking process
 	// and business metrics to unauthenticated callers.
 	MetricsToken string
+
+	// AuditLogFile, when non-empty, writes JSON-lines audit events to the
+	// named file in addition to the application logger. Events are appended
+	// one per line; the parent directory is created if missing. Rotation
+	// is the operator's responsibility (logrotate(8) with copytruncate).
+	// When empty (default), audit events go only to the application logger.
+	AuditLogFile string
 }
 
 // GRPCKeepAliveConfig mirrors the gRPC server's keepalive config without
@@ -309,6 +316,15 @@ func WithLogLevel(level LogLevel) Option {
 // Falls back to the GONACOS_METRICS_TOKEN env var.
 func WithMetricsToken(token string) Option {
 	return func(o *options) { o.MetricsToken = token }
+}
+
+// WithAuditLogFile writes JSON-lines audit events to the named file in
+// addition to the application logger. Events are appended one per line;
+// the parent directory is created if missing. When unset (default), audit
+// events go only to the application logger. Falls back to the
+// GONACOS_AUDIT_LOG_FILE env var.
+func WithAuditLogFile(path string) Option {
+	return func(o *options) { o.AuditLogFile = path }
 }
 
 // WithGRPCKeepAlive enables HTTP/2 PING-based liveness detection on the gRPC
@@ -632,6 +648,16 @@ func (o *options) resolveMetricsToken() string {
 		return o.MetricsToken
 	}
 	return os.Getenv("GONACOS_METRICS_TOKEN")
+}
+
+// resolveAuditLogFile returns the path to the audit log file. Returns the
+// explicitly configured path when set, otherwise the GONACOS_AUDIT_LOG_FILE
+// env var, otherwise empty (audit events go only to the application logger).
+func (o *options) resolveAuditLogFile() string {
+	if o.AuditLogFile != "" {
+		return o.AuditLogFile
+	}
+	return os.Getenv("GONACOS_AUDIT_LOG_FILE")
 }
 
 // resolveGRPCKeepAlive returns the gRPC HTTP/2 keepalive config. Returns the

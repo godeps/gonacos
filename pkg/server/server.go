@@ -64,9 +64,11 @@ func New(opts ...Option) (*Server, error) {
 	bundle := app.NewServiceBundleWithAuthSecret(o.resolveAuthSecret())
 	// Wire the server logger as the audit sink so security-relevant
 	// events (login, user/namespace/config CRUD, backup/restore) land in
-	// the same log stream as access logs. A nil logger disables auditing
-	// (matching noopAuditLogger behavior).
-	bundle.AuditLogger = app.NewLoggerAuditLogger(logger)
+	// the same log stream as access logs. When an audit log file is
+	// configured, events also go to that file as JSON-lines for
+	// compliance archival and SIEM forwarding. A nil logger disables
+	// auditing (matching noopAuditLogger behavior).
+	bundle.AuditLogger = buildAuditLogger(logger, o.resolveAuditLogFile())
 	coord := store.NewCoordinator()
 	coord.Register(bundle.Namespace)
 	coord.Register(bundle.Config)
@@ -379,6 +381,26 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // config/naming/auth/namespace/ai/cluster methods directly without a network
 // hop.
 func (s *Server) Services() *app.ServiceBundle { return s.bundle }
+
+// buildAuditLogger assembles the AuditLogger for the server. When path is
+// empty, events go to the application logger only. When path is set, events
+// fan out to both the application logger and a JSON-lines file at path. If
+// the file cannot be opened, the server logs a warning and continues with
+// logger-only audit so events are not lost.
+func buildAuditLogger(logger Logger, path string) app.AuditLogger {
+	loggerAudit := app.NewLoggerAuditLogger(logger)
+	if path == "" {
+		return loggerAudit
+	}
+	fileAudit, err := app.NewFileAuditLogger(path)
+	if err != nil {
+		if logger != nil {
+			logger.Infof("audit: file logger disabled for path %q: %v", path, err)
+		}
+		return loggerAudit
+	}
+	return app.NewMultiAuditLogger(loggerAudit, fileAudit)
+}
 
 // Coordinator returns the shared snapshot coordinator. Register additional
 // Snapshotters here to include them in Save/Load.

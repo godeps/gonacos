@@ -1,7 +1,12 @@
 package app
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -93,6 +98,107 @@ func NewLoggerAuditLogger(logger interface {
 		return noopAuditLogger{}
 	}
 	return loggerAuditLogger{logger: logger}
+}
+
+// fileAuditLogger writes JSON-encoded audit events to a dedicated file, one
+// event per line (JSON-lines). The file is opened in append mode (created
+// if missing) and writes are serialized with a mutex so concurrent Log
+// calls don't interleave. Rotation is the operator's responsibility
+// (logrotate(8) with copytruncate, or similar) — the file handle is kept
+// open for the process lifetime to avoid per-event open overhead.
+//
+// On open or write failure the logger falls back to stderr so events are
+// not lost silently; the underlying file handle is closed and reopened on
+// the next successful open.
+type fileAuditLogger struct {
+	mu   sync.Mutex
+	path string
+	f    *os.File
+}
+
+// NewFileAuditLogger opens (or creates) the audit log file at path and
+// returns an AuditLogger that writes JSON-lines to it. The parent
+// directory is created if missing. Returns an error if the file cannot be
+// opened; callers should fall back to a logger-based audit logger in that
+// case.
+func NewFileAuditLogger(path string) (AuditLogger, error) {
+	if path == "" {
+		return nil, errAuditPathEmpty
+	}
+	if dir := filepath.Dir(path); dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	return &fileAuditLogger{path: path, f: f}, nil
+}
+
+// errAuditPathEmpty signals NewFileAuditLogger was called with an empty path.
+var errAuditPathEmpty = auditError("audit log file path is empty")
+
+type auditError string
+
+func (e auditError) Error() string { return string(e) }
+
+func (l *fileAuditLogger) Log(e AuditEvent) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.f == nil {
+		// Reopen on demand after a previous write failure.
+		f, err := os.OpenFile(l.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "audit: reopen %s failed: %v\n", l.path, err)
+			return
+		}
+		l.f = f
+	}
+	line, err := json.Marshal(e)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "audit: marshal failed: %v\n", err)
+		return
+	}
+	line = append(line, '\n')
+	if _, err := l.f.Write(line); err != nil {
+		fmt.Fprintf(os.Stderr, "audit: write %s failed: %v\n", l.path, err)
+		_ = l.f.Close()
+		l.f = nil
+	}
+}
+
+// multiAuditLogger fans events out to multiple loggers. Useful when audit
+// events should go to both the application logger (for greppable access-log
+// style) and a dedicated file (for compliance/forwarding).
+type multiAuditLogger struct {
+	loggers []AuditLogger
+}
+
+// NewMultiAuditLogger wraps multiple AuditLoggers so events fan out to all
+// of them. Nil loggers are skipped.
+func NewMultiAuditLogger(loggers ...AuditLogger) AuditLogger {
+	var keep []AuditLogger
+	for _, l := range loggers {
+		if l == nil {
+			continue
+		}
+		keep = append(keep, l)
+	}
+	if len(keep) == 0 {
+		return noopAuditLogger{}
+	}
+	if len(keep) == 1 {
+		return keep[0]
+	}
+	return multiAuditLogger{loggers: keep}
+}
+
+func (m multiAuditLogger) Log(e AuditEvent) {
+	for _, l := range m.loggers {
+		l.Log(e)
+	}
 }
 
 // auditFromRequest extracts the username (from auth claims) and client IP

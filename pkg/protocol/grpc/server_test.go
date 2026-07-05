@@ -424,15 +424,34 @@ func (c *stubCounter) Inc() {
 	c.count++
 }
 
+// stubHistogram is a test HistogramMetric that records the last observed
+// value and the number of observations.
+type stubHistogram struct {
+	mu        sync.Mutex
+	observed  int64
+	obsCount  int
+}
+
+func (h *stubHistogram) Observe(ms int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.observed = ms
+	h.obsCount++
+}
+
 // stubMetricsRegistry is a test MetricsRegistry that holds a single counter
 // per (name, labels) pair so the test can assert increments.
 type stubMetricsRegistry struct {
 	mu       sync.Mutex
 	counters map[string]*stubCounter
+	histos   map[string]*stubHistogram
 }
 
 func newStubMetricsRegistry() *stubMetricsRegistry {
-	return &stubMetricsRegistry{counters: map[string]*stubCounter{}}
+	return &stubMetricsRegistry{
+		counters: map[string]*stubCounter{},
+		histos:   map[string]*stubHistogram{},
+	}
 }
 
 func (r *stubMetricsRegistry) Counter(name string, labels map[string]string) CounterMetric {
@@ -445,6 +464,18 @@ func (r *stubMetricsRegistry) Counter(name string, labels map[string]string) Cou
 		r.counters[key] = c
 	}
 	return c
+}
+
+func (r *stubMetricsRegistry) Histogram(name string, labels map[string]string, buckets []float64) HistogramMetric {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := name + "/" + labels["method"]
+	h, ok := r.histos[key]
+	if !ok {
+		h = &stubHistogram{}
+		r.histos[key] = h
+	}
+	return h
 }
 
 // TestServerMetricsRegistryIncrements verifies that the gRPC server records
@@ -491,5 +522,20 @@ func TestServerMetricsRegistryIncrements(t *testing.T) {
 	c.mu.Unlock()
 	if got != 1 {
 		t.Fatalf("counter = %d, want 1", got)
+	}
+
+	// Histogram should also have one observation for /Request/request.
+	hkey := "gonacos_grpc_request_duration_seconds//Request/request"
+	registry.mu.Lock()
+	h, hok := registry.histos[hkey]
+	registry.mu.Unlock()
+	if !hok {
+		t.Fatalf("no histogram recorded for key %q", hkey)
+	}
+	h.mu.Lock()
+	hCount := h.obsCount
+	h.mu.Unlock()
+	if hCount != 1 {
+		t.Fatalf("histogram observations = %d, want 1", hCount)
 	}
 }

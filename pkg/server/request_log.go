@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/godeps/gonacos/pkg/observability"
+	grpcsrv "github.com/godeps/gonacos/pkg/protocol/grpc"
 )
 
 // requestLogMiddleware logs each HTTP request via the configured Logger.
@@ -112,6 +113,10 @@ func (m *requestLogMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			"method": r.Method,
 			"status": strconv.Itoa(rec.status),
 		}).Inc()
+		m.registry.Histogram("gonacos_http_request_duration_seconds",
+			map[string]string{"method": r.Method},
+			grpcsrv.HTTPLatencyBuckets(),
+		).Observe(duration.Milliseconds())
 	}
 }
 

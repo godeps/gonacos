@@ -25,3 +25,10 @@ type grpcMetricsAdapter struct {
 func (a *grpcMetricsAdapter) Counter(name string, labels map[string]string) grpcsrv.CounterMetric {
 	return a.r.Counter(name, labels)
 }
+
+// Histogram delegates to the underlying registry, returning the same
+// *observability.Histogram pointer (which satisfies grpc.HistogramMetric
+// via its Observe(int64) method). Buckets are passed through unchanged.
+func (a *grpcMetricsAdapter) Histogram(name string, labels map[string]string, buckets []float64) grpcsrv.HistogramMetric {
+	return a.r.Histogram(name, labels, buckets)
+}

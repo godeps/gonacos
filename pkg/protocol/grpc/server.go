@@ -36,6 +36,22 @@ const (
 	StatusUnauthenticated    = 16
 )
 
+// grpcLatencyBuckets is the bucket set for gonacos_grpc_request_duration_seconds.
+// Covers sub-millisecond fast paths (in-memory reads) through multi-second
+// slow paths (snapshot loads, slow upstream calls) at a resolution that lets
+// operators distinguish "p99 under 50ms" from "p99 over 1s" without
+// excessive series cardinality. Values are in milliseconds.
+var grpcLatencyBuckets = []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000}
+
+// HTTPLatencyBuckets is the bucket set for gonacos_http_request_duration_seconds.
+// Mirrors the gRPC buckets so HTTP and gRPC panels can share a single
+// Grafana panel definition without per-protocol overrides. Exposed so the
+// HTTP middleware in pkg/server can use the same buckets without duplicating
+// the values.
+func HTTPLatencyBuckets() []float64 {
+	return []float64{1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000}
+}
+
 // StatusError carries a gRPC status code and message.
 type StatusError struct {
 	Code    int
@@ -106,8 +122,13 @@ type Server struct {
 	// error-rate panels that distinguish "all requests failing" from "one
 	// method failing". The registry is the same one used by the HTTP side,
 	// so /metrics exposes both under a single scrape.
+	//
+	// Latency is also recorded: gonacos_grpc_request_duration_seconds
+	// {method} is observed per RPC. Operators use the histogram buckets to
+	// compute p50/p90/p99 latency per method in Grafana.
 	MetricsRegistry interface {
 		Counter(name string, labels map[string]string) CounterMetric
+		Histogram(name string, labels map[string]string, buckets []float64) HistogramMetric
 	}
 
 	// Logf, when non-nil, is called for diagnostic messages (currently
@@ -121,6 +142,13 @@ type Server struct {
 // protocol types for its own dashboards).
 type CounterMetric interface {
 	Inc()
+}
+
+// HistogramMetric is the subset of the observability.Histogram interface
+// the gRPC server needs. Observe takes milliseconds to match the
+// observability.Histogram convention.
+type HistogramMetric interface {
+	Observe(ms int64)
 }
 
 // NewServer returns an empty gRPC server.
@@ -334,6 +362,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"method": r.URL.Path,
 			"status": status,
 		}).Inc()
+		s.MetricsRegistry.Histogram("gonacos_grpc_request_duration_seconds",
+			map[string]string{"method": r.URL.Path},
+			grpcLatencyBuckets,
+		).Observe(time.Since(start).Milliseconds())
 	}
 }
 

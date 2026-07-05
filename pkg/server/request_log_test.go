@@ -171,4 +171,15 @@ func TestRequestLogMiddlewareIncrementsMetrics(t *testing.T) {
 	if other != 0 {
 		t.Fatalf("200 counter = %d, want 0", other)
 	}
+
+	// Histogram should have one observation for GET. The Histogram type
+	// doesn't expose a count getter, so verify via the Prometheus output.
+	_ = registry.Histogram("gonacos_http_request_duration_seconds",
+		map[string]string{"method": "GET"},
+		[]float64{1, 5, 10})
+	var promBuf bytes.Buffer
+	registry.WritePrometheus(&promBuf)
+	if !strings.Contains(promBuf.String(), "gonacos_http_request_duration_seconds") {
+		t.Fatalf("histogram not exposed in /metrics output: %s", promBuf.String())
+	}
 }

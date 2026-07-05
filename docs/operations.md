@@ -305,7 +305,9 @@ The following metrics are always present:
 | `process_gc_count` | gauge | Completed GC cycles |
 | `process_start_time_seconds` | gauge | Process start epoch |
 | `gonacos_http_requests_total{method,status}` | counter | HTTP requests served, by method and status code |
+| `gonacos_http_request_duration_seconds{method}` | histogram | HTTP request latency in milliseconds (buckets: 1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000) |
 | `gonacos_grpc_requests_total{method,status}` | counter | gRPC requests served, by gRPC path and status code |
+| `gonacos_grpc_request_duration_seconds{method}` | histogram | gRPC request latency in milliseconds (same buckets as HTTP) |
 | `gonacos_push_total{type="config"}` | counter | Config change notifications pushed to subscribers |
 | `gonacos_push_total{type="service"}` | counter | Service change notifications pushed to subscribers |
 | `gonacos_config_subscriptions` | gauge | Active config subscriptions (client × dataId) |

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/godeps/gonacos/pkg/observability"
 	"github.com/godeps/gonacos/pkg/protocol"
 	"golang.org/x/time/rate"
 )
@@ -98,20 +99,34 @@ func (r *rateLimiter) StartCleanup(interval, maxIdle time.Duration) func() {
 // rateLimitMiddleware wraps an http.Handler with a per-IP rate limiter. IPs
 // exceeding the configured rate receive 429 Too Many Requests.
 type rateLimitMiddleware struct {
-	limiter *rateLimiter
-	next    http.Handler
+	limiter      *rateLimiter
+	next         http.Handler
+	rejectionCtr *observability.Counter
 }
 
-func NewRateLimitMiddleware(limiter *rateLimiter, next http.Handler) http.Handler {
+// NewRateLimitMiddleware wraps next with a per-IP rate limiter. When
+// registry is non-nil, rejected requests increment
+// gonacos_rate_limit_rejections_total{protocol="http"} — the alerting
+// signal that rate limiting is firing. Without it, operators can only
+// infer from gonacos_http_requests_total{status="429"}, which is
+// indirect and breaks if any other path ever returns 429.
+func NewRateLimitMiddleware(limiter *rateLimiter, next http.Handler, registry *observability.Registry) http.Handler {
 	if limiter == nil {
 		return next
 	}
-	return &rateLimitMiddleware{limiter: limiter, next: next}
+	mw := &rateLimitMiddleware{limiter: limiter, next: next}
+	if registry != nil {
+		mw.rejectionCtr = registry.Counter("gonacos_rate_limit_rejections_total", map[string]string{"protocol": "http"})
+	}
+	return mw
 }
 
 func (m *rateLimitMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ip := clientIPForLimit(r)
 	if !m.limiter.allow(ip) {
+		if m.rejectionCtr != nil {
+			m.rejectionCtr.Inc()
+		}
 		w.Header().Set("Retry-After", strconv.Itoa(int(time.Second.Seconds())))
 		protocol.WriteError(w, http.StatusTooManyRequests, protocol.Error{
 			Code:    http.StatusTooManyRequests,

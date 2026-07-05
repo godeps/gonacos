@@ -248,6 +248,26 @@ func (s *Server) recordFrameReadTimeout() {
 	s.MetricsRegistry.Counter("gonacos_grpc_frame_read_timeouts_total", nil).Inc()
 }
 
+// recordRateLimitRejection increments
+// gonacos_rate_limit_rejections_total{protocol="grpc"} when the
+// per-IP rate limiter denies a gRPC request. The metric is the
+// alerting signal that gRPC rate limiting is firing — without it,
+// operators can only infer from gonacos_grpc_requests_total{status=
+// "8"} (RESOURCE_EXHAUSTED), which is indirect and breaks if any
+// other path ever returns status 8. The {protocol="grpc"} label
+// distinguishes gRPC rejections from HTTP rejections (recorded by
+// the HTTP rate-limit middleware with protocol="http") so operators
+// can see which protocol is being abused. Callers handle a nil
+// MetricsRegistry gracefully (no-op).
+func (s *Server) recordRateLimitRejection() {
+	if s.MetricsRegistry == nil {
+		return
+	}
+	s.MetricsRegistry.Counter("gonacos_rate_limit_rejections_total",
+		map[string]string{"protocol": "grpc"},
+	).Inc()
+}
+
 // RegisterUnary registers a handler for the Request service.
 func (s *Server) RegisterUnary(method string, h Handler) {
 	s.mu.Lock()
@@ -455,6 +475,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.RateLimiter != nil {
 		ip := ClientIPFromContext(ctx)
 		if !s.RateLimiter.Allow(ip) {
+			s.recordRateLimitRejection()
 			writeGRPCStatus(w, StatusResourceExhausted, "rate limit exceeded for client IP")
 			if s.Logf != nil {
 				s.Logf("grpc %s %s status=%d duration=%s remote=%s (rate-limited)",

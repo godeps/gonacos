@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/godeps/gonacos/pkg/observability"
 )
 
 // TestRateLimiterPerIP verifies that the per-IP rate limiter throttles the
@@ -18,7 +20,7 @@ func TestRateLimiterPerIP(t *testing.T) {
 	mw := NewRateLimitMiddleware(rl, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
-	}))
+	}), nil)
 
 	// First request from IP1 passes (burst).
 	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -63,7 +65,7 @@ func TestRateLimiterXForwardedFor(t *testing.T) {
 	rl := NewRateLimiter(1, 1)
 	mw := NewRateLimitMiddleware(rl, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}))
+	}), nil)
 
 	// First request from XFF client A.
 	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -108,7 +110,7 @@ func TestRateLimiterUntrustedProxyIgnoresXFF(t *testing.T) {
 	rl := NewRateLimiter(1, 1)
 	mw := NewRateLimitMiddleware(rl, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}))
+	}), nil)
 
 	// First request from a peer NOT in 10.0.0.0/8 — XFF should be
 	// ignored, RemoteAddr (203.0.113.99) used.
@@ -259,5 +261,68 @@ func TestMaxBodyMiddlewareZeroDisables(t *testing.T) {
 		if got := w.Body.Len(); got != len(body) {
 			t.Fatalf("max=%d: got %d bytes, want %d (body should pass through)", max, got, len(body))
 		}
+	}
+}
+
+// TestRateLimitMiddlewareRejectionMetric verifies that rejected requests
+// increment gonacos_rate_limit_rejections_total{protocol="http"} — the
+// alerting signal that HTTP rate limiting is firing. Without it, operators
+// can only infer from gonacos_http_requests_total{status="429"}, which
+// is indirect and breaks if any other path ever returns 429.
+func TestRateLimitMiddlewareRejectionMetric(t *testing.T) {
+	rl := NewRateLimiter(1, 1) // 1 rps, burst 1
+	registry := observability.NewRegistry()
+	mw := NewRateLimitMiddleware(rl, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}), registry)
+
+	// First request from IP1 passes (burst).
+	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req1.RemoteAddr = "10.0.0.1:1234"
+	mw.ServeHTTP(httptest.NewRecorder(), req1)
+
+	// Second immediate request from IP1 is throttled.
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.RemoteAddr = "10.0.0.1:1234"
+	mw.ServeHTTP(httptest.NewRecorder(), req2)
+
+	// First request from IP2 passes (separate bucket).
+	req3 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req3.RemoteAddr = "10.0.0.2:1234"
+	mw.ServeHTTP(httptest.NewRecorder(), req3)
+
+	// Second immediate request from IP2 is throttled.
+	req4 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req4.RemoteAddr = "10.0.0.2:1234"
+	mw.ServeHTTP(httptest.NewRecorder(), req4)
+
+	rejections := registry.Counter("gonacos_rate_limit_rejections_total",
+		map[string]string{"protocol": "http"}).Value()
+	if rejections != 2 {
+		t.Fatalf("gonacos_rate_limit_rejections_total{protocol=\"http\"} = %d, want 2 (one per IP)", rejections)
+	}
+}
+
+// TestRateLimitMiddlewareNilRegistryNoop verifies that the rejection
+// counter doesn't panic when the registry is nil — production callers
+// that opt out of metrics must not crash on rate-limit rejection.
+func TestRateLimitMiddlewareNilRegistryNoop(t *testing.T) {
+	rl := NewRateLimiter(1, 1)
+	mw := NewRateLimitMiddleware(rl, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}), nil)
+
+	// First request passes.
+	req1 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req1.RemoteAddr = "10.0.0.1:1234"
+	mw.ServeHTTP(httptest.NewRecorder(), req1)
+
+	// Second request is throttled — must not panic with nil registry.
+	req2 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req2.RemoteAddr = "10.0.0.1:1234"
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req2)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("nil registry should still reject: got %d, want 429", rec.Code)
 	}
 }

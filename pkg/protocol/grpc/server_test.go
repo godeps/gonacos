@@ -820,3 +820,68 @@ func TestServerRecordFrameReadTimeoutNilRegistryNoop(t *testing.T) {
 	}()
 	srv.recordFrameReadTimeout()
 }
+
+// TestServerRateLimitRejectionIncrementsMetric verifies that when the
+// per-IP rate limiter rejects a peer, the server increments
+// gonacos_rate_limit_rejections_total{protocol="grpc"} — the alerting
+// signal that gRPC rate limiting is firing. Without it, operators can
+// only infer from gonacos_grpc_requests_total{status="8"}
+// (RESOURCE_EXHAUSTED), which is indirect and breaks if any other
+// path ever returns status 8.
+func TestServerRateLimitRejectionIncrementsMetric(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	limiter := &stubRateLimiter{allowAt: 0} // deny all
+	srv.RateLimiter = limiter
+	registry := newStubMetricsRegistry()
+	srv.MetricsRegistry = registry
+	handlerCalled := 0
+	srv.RegisterUnary("Request/request", func(ctx context.Context, req Payload) (Payload, error) {
+		handlerCalled++
+		return Payload{Metadata: Metadata{Type: "TestResponse"}}, nil
+	})
+	go func() { _ = srv.ListenAndServe("127.0.0.1:0") }()
+	for i := 0; i < 50 && srv.Addr() == nil; i++ {
+		time.Sleep(2 * time.Millisecond)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(ctx)
+	}()
+
+	body := encodeGRPCRequestBody(Payload{Metadata: Metadata{Type: "TestRequest"}})
+	resp, err := http.Post(
+		"http://"+srv.Addr().String()+"/Request/request",
+		"application/grpc",
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	resp.Body.Close()
+	if resp.Header.Get("grpc-status") != "8" {
+		t.Fatalf("grpc-status = %v, want 8 (RESOURCE_EXHAUSTED)", resp.Header.Get("grpc-status"))
+	}
+
+	// stubMetricsRegistry keys counters as name + "/" + labels["method"]
+	// + "/" + labels["status"]. The rate-limit counter has a "protocol"
+	// label (not "method" or "status"), so those slots are empty and
+	// the key collapses to name + "//".
+	key := "gonacos_rate_limit_rejections_total//"
+	registry.mu.Lock()
+	c, ok := registry.counters[key]
+	registry.mu.Unlock()
+	if !ok {
+		t.Fatalf("no rate-limit counter recorded for key %q (counters: %v)", key, registry.counters)
+	}
+	c.mu.Lock()
+	got := c.count
+	c.mu.Unlock()
+	if got != 1 {
+		t.Errorf("gonacos_rate_limit_rejections_total{protocol=\"grpc\"} = %d, want 1", got)
+	}
+	if handlerCalled != 0 {
+		t.Errorf("handlerCalled = %d, want 0 (rate-limited request must not invoke handler)", handlerCalled)
+	}
+}

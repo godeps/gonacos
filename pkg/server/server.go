@@ -288,7 +288,7 @@ func New(opts ...Option) (*Server, error) {
 	if rps := o.resolveHTTPRateRPS(); rps > 0 {
 		rl := app.NewRateLimiter(rps, o.resolveHTTPRateBurst())
 		stopRateGC = rl.StartCleanup(5*time.Minute, 10*time.Minute)
-		httpHandler = app.NewRateLimitMiddleware(rl, httpHandler)
+		httpHandler = app.NewRateLimitMiddleware(rl, httpHandler, registry)
 		grpcSrv.RateLimiter = rl
 	}
 

@@ -102,7 +102,7 @@ func TestRequestIDOnRejectedRequests(t *testing.T) {
 
 		chain := newRequestIDMiddleware(
 			newRequestLogMiddleware(logger, true, nil,
-				app.NewRateLimitMiddleware(rl, inner),
+				app.NewRateLimitMiddleware(rl, inner, nil),
 			),
 		)
 

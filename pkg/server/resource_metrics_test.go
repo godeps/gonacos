@@ -16,7 +16,7 @@ func TestResourceCollectorExposesGauges(t *testing.T) {
 	registry := observability.NewRegistry()
 	bundle := app.NewServiceBundle()
 
-	stop := startResourceCollector(registry, bundle, 0) // 0 = no background ticker
+	stop := startResourceCollector(registry, bundle, nil, 0) // 0 = no background ticker
 	defer stop()
 
 	var buf strings.Builder
@@ -29,6 +29,7 @@ func TestResourceCollectorExposesGauges(t *testing.T) {
 		"gonacos_services_total",
 		"gonacos_users_total",
 		"gonacos_instances_total",
+		"gonacos_grpc_connections",
 	} {
 		if !strings.Contains(out, name) {
 			t.Errorf("metrics output missing %q:\n%s", name, out)
@@ -39,10 +40,10 @@ func TestResourceCollectorExposesGauges(t *testing.T) {
 // TestResourceCollectorNilSafe verifies that nil registry or nil bundle
 // doesn't panic and returns a callable no-op stop function.
 func TestResourceCollectorNilSafe(t *testing.T) {
-	stop1 := startResourceCollector(nil, nil, time.Second)
+	stop1 := startResourceCollector(nil, nil, nil, time.Second)
 	stop1() // must not panic
 
 	registry := observability.NewRegistry()
-	stop2 := startResourceCollector(registry, nil, time.Second)
+	stop2 := startResourceCollector(registry, nil, nil, time.Second)
 	stop2() // must not panic
 }

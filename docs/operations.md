@@ -313,6 +313,7 @@ The following metrics are always present:
 | `gonacos_services_total` | gauge | Total registered services across all namespaces |
 | `gonacos_instances_total` | gauge | Total service instances across all services |
 | `gonacos_users_total` | gauge | Number of registered users |
+| `gonacos_grpc_connections` | gauge | Active long-lived gRPC push connections (SDK clients subscribed to config/service changes) |
 | `gonacos_push_total{type="config"}` | counter | Config change notifications pushed to subscribers |
 | `gonacos_push_total{type="service"}` | counter | Service change notifications pushed to subscribers |
 | `gonacos_config_subscriptions` | gauge | Active config subscriptions (client × dataId) |

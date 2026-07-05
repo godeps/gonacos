@@ -249,7 +249,7 @@ func New(opts ...Option) (*Server, error) {
 		grpcLn:        grpcLn,
 		stopPeriodic:  stopPeriodic,
 		stopRateGC:    stopRateGC,
-		stopResource:  startResourceCollector(registry, bundle, 30*time.Second),
+		stopResource:  startResourceCollector(registry, bundle, push, 30*time.Second),
 	}, nil
 }
 

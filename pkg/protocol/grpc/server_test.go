@@ -31,6 +31,34 @@ func (b *threadSafeBuffer) String() string {
 	return b.buf.String()
 }
 
+// waitForLogSubstring polls logBuf for up to timeout waiting for substring to
+// appear. Returns the log content (so the caller can include it in failure
+// messages) and a boolean indicating whether the substring was found.
+//
+// Why this exists: an HTTP client's Post returns as soon as the response
+// headers are received — the server's handler may still be running when
+// Post returns. The gRPC server writes the access log via Logf AFTER writing
+// the response body, so a test that reads the log buffer immediately after
+// Post can race the handler's Logf call and see an empty log. Polling
+// eliminates the race without arbitrary sleeps.
+//
+// The timeout is bounded so a missing log line fails fast rather than
+// hanging the test suite.
+func waitForLogSubstring(t *testing.T, logBuf *threadSafeBuffer, substring string, timeout time.Duration) (string, bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		logged := logBuf.String()
+		if strings.Contains(logged, substring) {
+			return logged, true
+		}
+		if time.Now().After(deadline) {
+			return logged, false
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+}
+
 func TestServerStartsAndRespondsToUnknownPath(t *testing.T) {
 	t.Parallel()
 	srv := NewServer()
@@ -193,8 +221,14 @@ func TestServerUnaryHandlerPanicReturnsInternal(t *testing.T) {
 	if resp.Header.Get("grpc-status") != "13" {
 		t.Fatalf("grpc-status = %v, want 13 (Internal)", resp.Header.Get("grpc-status"))
 	}
-	if !strings.Contains(logBuf.String(), "grpc panic recovered") {
-		t.Errorf("log missing 'grpc panic recovered': %s", logBuf.String())
+	// Poll the log buffer: the panic recovery path runs in the deferred
+	// function, which may execute AFTER http.Post returns (the client
+	// returns on response headers; the server's handler is still running
+	// the deferred recover). Without polling, this test races the log
+	// write and intermittently fails.
+	logged, ok := waitForLogSubstring(t, &logBuf, "grpc panic recovered", 2*time.Second)
+	if !ok {
+		t.Errorf("log missing 'grpc panic recovered': %s", logged)
 	}
 }
 
@@ -231,8 +265,13 @@ func TestServerAccessLogEmittedOnUnaryCall(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	logged := logBuf.String()
-	if !strings.Contains(logged, "grpc POST /Request/request") {
+	// Poll the log buffer: the access log is written via Logf AFTER the
+	// response body is flushed, which can happen AFTER http.Post returns
+	// (the client returns on response headers). Reading logBuf immediately
+	// races the handler's Logf call and intermittently fails with an empty
+	// log. Polling eliminates the race without arbitrary sleeps.
+	logged, ok := waitForLogSubstring(t, &logBuf, "grpc POST", 2*time.Second)
+	if !ok {
 		t.Errorf("access log missing method/path: %s", logged)
 	}
 	if !strings.Contains(logged, "status=0") {
@@ -427,9 +466,9 @@ func (c *stubCounter) Inc() {
 // stubHistogram is a test HistogramMetric that records the last observed
 // value and the number of observations.
 type stubHistogram struct {
-	mu        sync.Mutex
-	observed  int64
-	obsCount  int
+	mu       sync.Mutex
+	observed int64
+	obsCount int
 }
 
 func (h *stubHistogram) Observe(ms int64) {

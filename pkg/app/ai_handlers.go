@@ -556,10 +556,25 @@ func (h aiHandler) skillCreateDraft(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, err)
 		return
 	}
+	// The Java Nacos v3 React console's create-skill dialog sends
+	// skillName + skillCard (a JSON document) instead of id/name/content.
+	// Map them onto the service layer's expectations.
+	id := formValue(r, "id")
+	if id == "" {
+		id = formValue(r, "skillName")
+	}
+	name := formValue(r, "name")
+	if name == "" {
+		name = id
+	}
+	content := formValue(r, "content")
+	if content == "" {
+		content = formValue(r, "skillCard")
+	}
 	res, err := h.service.CreateSkillDraft(
-		formValue(r, "id"),
-		formValue(r, "name"),
-		formValue(r, "content"),
+		id,
+		name,
+		content,
 		formValue(r, "author"),
 		labels, bizTags,
 		formValue(r, "description"),
@@ -582,7 +597,7 @@ func (h aiHandler) skillUpdateDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.service.UpdateSkillDraft(
-		formValue(r, "id"),
+		aiID(r, "skillName"),
 		formValue(r, "content"),
 		formValue(r, "author"),
 		labels, bizTags,
@@ -600,7 +615,7 @@ func (h aiHandler) skillDeleteDraft(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.DeleteSkillDraft(formValue(r, "id")); err != nil {
+	if err := h.service.DeleteSkillDraft(aiID(r, "skillName")); err != nil {
 		writeAIError(w, err)
 		return
 	}
@@ -611,7 +626,7 @@ func (h aiHandler) skillSubmit(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.SubmitSkill(formValue(r, "id"))
+	res, err := h.service.SubmitSkill(aiID(r, "skillName"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -623,7 +638,7 @@ func (h aiHandler) skillPublish(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.PublishSkill(formValue(r, "id"), false)
+	res, err := h.service.PublishSkill(aiID(r, "skillName"), false)
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -635,7 +650,7 @@ func (h aiHandler) skillForcePublish(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.PublishSkill(formValue(r, "id"), true)
+	res, err := h.service.PublishSkill(aiID(r, "skillName"), true)
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -648,7 +663,7 @@ func (h aiHandler) skillRedraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.service.RedraftSkill(
-		formValue(r, "id"),
+		aiID(r, "skillName"),
 		formValue(r, "content"),
 		formValue(r, "author"),
 	)
@@ -663,7 +678,7 @@ func (h aiHandler) skillOnline(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.OnlineSkill(formValue(r, "id"))
+	res, err := h.service.OnlineSkill(aiID(r, "skillName"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -675,7 +690,7 @@ func (h aiHandler) skillOffline(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.OfflineSkill(formValue(r, "id"))
+	res, err := h.service.OfflineSkill(aiID(r, "skillName"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -687,7 +702,7 @@ func (h aiHandler) skillDelete(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.DeleteSkill(formValue(r, "id")); err != nil {
+	if err := h.service.DeleteSkill(aiID(r, "skillName")); err != nil {
 		writeAIError(w, err)
 		return
 	}
@@ -698,7 +713,7 @@ func (h aiHandler) skillDetail(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.GetSkill(formValue(r, "id"))
+	res, err := h.service.GetSkill(aiID(r, "skillName"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -721,7 +736,7 @@ func (h aiHandler) skillVersionDetail(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	v, err := h.service.GetSkillVersion(formValue(r, "id"), formValue(r, "version"))
+	v, err := h.service.GetSkillVersion(aiID(r, "skillName"), formValue(r, "version"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -733,7 +748,7 @@ func (h aiHandler) skillVersionDownload(w http.ResponseWriter, r *http.Request) 
 	if !parseForm(w, r) {
 		return
 	}
-	content, err := h.service.DownloadSkillVersion(formValue(r, "id"), formValue(r, "version"))
+	content, err := h.service.DownloadSkillVersion(aiID(r, "skillName"), formValue(r, "version"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -840,9 +855,19 @@ func (h aiHandler) agentSpecCreateDraft(w http.ResponseWriter, r *http.Request) 
 		writeAIError(w, err)
 		return
 	}
+	// The Java Nacos v3 React console's create-agentspec dialog sends
+	// agentSpecName (not id/name). Map it onto the service layer's id/name.
+	id := formValue(r, "id")
+	if id == "" {
+		id = formValue(r, "agentSpecName")
+	}
+	name := formValue(r, "name")
+	if name == "" {
+		name = id
+	}
 	res, err := h.service.CreateAgentSpecDraft(
-		formValue(r, "id"),
-		formValue(r, "name"),
+		id,
+		name,
 		formValue(r, "content"),
 		formValue(r, "author"),
 		labels, bizTags,
@@ -866,7 +891,7 @@ func (h aiHandler) agentSpecUpdateDraft(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	res, err := h.service.UpdateAgentSpecDraft(
-		formValue(r, "id"),
+		aiID(r, "agentSpecName"),
 		formValue(r, "content"),
 		formValue(r, "author"),
 		labels, bizTags,
@@ -884,7 +909,7 @@ func (h aiHandler) agentSpecDeleteDraft(w http.ResponseWriter, r *http.Request) 
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.DeleteAgentSpecDraft(formValue(r, "id")); err != nil {
+	if err := h.service.DeleteAgentSpecDraft(aiID(r, "agentSpecName")); err != nil {
 		writeAIError(w, err)
 		return
 	}
@@ -895,7 +920,7 @@ func (h aiHandler) agentSpecSubmit(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.SubmitAgentSpec(formValue(r, "id"))
+	res, err := h.service.SubmitAgentSpec(aiID(r, "agentSpecName"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -907,7 +932,7 @@ func (h aiHandler) agentSpecPublish(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.PublishAgentSpec(formValue(r, "id"), false)
+	res, err := h.service.PublishAgentSpec(aiID(r, "agentSpecName"), false)
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -919,7 +944,7 @@ func (h aiHandler) agentSpecForcePublish(w http.ResponseWriter, r *http.Request)
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.PublishAgentSpec(formValue(r, "id"), true)
+	res, err := h.service.PublishAgentSpec(aiID(r, "agentSpecName"), true)
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -932,7 +957,7 @@ func (h aiHandler) agentSpecRedraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, err := h.service.RedraftAgentSpec(
-		formValue(r, "id"),
+		aiID(r, "agentSpecName"),
 		formValue(r, "content"),
 		formValue(r, "author"),
 	)
@@ -947,7 +972,7 @@ func (h aiHandler) agentSpecOnline(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.OnlineAgentSpec(formValue(r, "id"))
+	res, err := h.service.OnlineAgentSpec(aiID(r, "agentSpecName"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -959,7 +984,7 @@ func (h aiHandler) agentSpecOffline(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.OfflineAgentSpec(formValue(r, "id"))
+	res, err := h.service.OfflineAgentSpec(aiID(r, "agentSpecName"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -971,7 +996,7 @@ func (h aiHandler) agentSpecDelete(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.DeleteAgentSpec(formValue(r, "id")); err != nil {
+	if err := h.service.DeleteAgentSpec(aiID(r, "agentSpecName")); err != nil {
 		writeAIError(w, err)
 		return
 	}
@@ -982,7 +1007,7 @@ func (h aiHandler) agentSpecDetail(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	res, err := h.service.GetAgentSpec(formValue(r, "id"))
+	res, err := h.service.GetAgentSpec(aiID(r, "agentSpecName"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -1005,7 +1030,7 @@ func (h aiHandler) agentSpecVersionDetail(w http.ResponseWriter, r *http.Request
 	if !parseForm(w, r) {
 		return
 	}
-	v, err := h.service.GetAgentSpecVersion(formValue(r, "id"), formValue(r, "version"))
+	v, err := h.service.GetAgentSpecVersion(aiID(r, "agentSpecName"), formValue(r, "version"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -1136,7 +1161,7 @@ func (h aiHandler) a2aDelete(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	if err := h.service.DeleteA2AAgent(formValue(r, "id")); err != nil {
+	if err := h.service.DeleteA2AAgent(aiID(r, "agentName")); err != nil {
 		writeAIError(w, err)
 		return
 	}
@@ -1158,7 +1183,7 @@ func (h aiHandler) a2aVersions(w http.ResponseWriter, r *http.Request) {
 	if !parseForm(w, r) {
 		return
 	}
-	versions, err := h.service.ListA2AAgentVersions(formValue(r, "id"))
+	versions, err := h.service.ListA2AAgentVersions(aiID(r, "agentName"))
 	if err != nil {
 		writeAIError(w, err)
 		return
@@ -1524,6 +1549,23 @@ func parseAIResourceAttrs(r *http.Request) (labels, bizTags []string, metadata m
 	return labels, bizTags, metadata, nil
 }
 
+// aiID returns the resource ID for AI endpoints. The Java Nacos v3 React
+// console sends resource-specific field names (skillName, agentSpecName,
+// mcpName, promptKey) instead of the generic "id" that the service layer
+// expects; fall back to those when "id" is missing.
+func aiID(r *http.Request, fallbackKeys ...string) string {
+	id := formValue(r, "id")
+	if id != "" {
+		return id
+	}
+	for _, key := range fallbackKeys {
+		if v := formValue(r, key); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func parseStringList(s string) ([]string, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -1589,15 +1631,64 @@ func buildA2AAgent(r *http.Request) (ai.A2AAgent, error) {
 	if err != nil {
 		return ai.A2AAgent{}, err
 	}
+	id := formValue(r, "id")
+	name := formValue(r, "name")
+	description := formValue(r, "description")
+	endpoint := formValue(r, "endpoint")
+	protocol := formValue(r, "protocol")
+	version := formValue(r, "version")
+	// The Java Nacos v3 React console's register-agent dialog sends
+	// agentName + agentCard (a JSON document of AgentDetailInfo) + version,
+	// not id/name/description/endpoint. Unmarshal agentCard to pull out
+	// name/description/endpoint/protocol when the gonados-native fields are
+	// absent, so the dialog's create/submit works without a backend
+	// protocol change.
+	if cardJSON := formValue(r, "agentCard"); cardJSON != "" {
+		var card struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Version     string `json:"version"`
+			Endpoint    string `json:"endpoint"`
+			URL         string `json:"url"`
+			Protocol    string `json:"protocol"`
+		}
+		if err := json.Unmarshal([]byte(cardJSON), &card); err != nil {
+			return ai.A2AAgent{}, err
+		}
+		if name == "" {
+			name = card.Name
+		}
+		if description == "" {
+			description = card.Description
+		}
+		if endpoint == "" {
+			endpoint = card.Endpoint
+			if endpoint == "" {
+				endpoint = card.URL
+			}
+		}
+		if protocol == "" {
+			protocol = card.Protocol
+		}
+		if version == "" {
+			version = card.Version
+		}
+	}
+	if id == "" {
+		id = formValue(r, "agentName")
+	}
+	if name == "" {
+		name = formValue(r, "agentName")
+	}
 	return ai.A2AAgent{
-		ID:           formValue(r, "id"),
-		Name:         formValue(r, "name"),
-		Description:  formValue(r, "description"),
-		Endpoint:     formValue(r, "endpoint"),
-		Protocol:     formValue(r, "protocol"),
+		ID:           id,
+		Name:         name,
+		Description:  description,
+		Endpoint:     endpoint,
+		Protocol:     protocol,
 		Capabilities: capabilities,
 		Metadata:     metadata,
-		Version:      formValue(r, "version"),
+		Version:      version,
 	}, nil
 }
 

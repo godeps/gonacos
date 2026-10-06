@@ -41,6 +41,8 @@ type PushService struct {
 	serviceSubs           map[string]map[string]bool // serviceKey -> set of connectionIDs
 	connectionConfigSubs  map[string]map[string]bool // connectionID -> set of configKeys
 	connectionServiceSubs map[string]map[string]bool // connectionID -> set of serviceKeys
+	configPushAllowed     func(connectionID, namespaceID, groupName, dataID string) bool
+	onUnregister          func(connectionID string)
 
 	metrics *pushMetrics
 }
@@ -109,6 +111,17 @@ func NewPushService(registry *grpc.ConnectionRegistry, config *configsvc.Service
 // gRPC server setup).
 func (p *PushService) ConnectionRegistry() *grpc.ConnectionRegistry {
 	return p.registry
+}
+
+// SetConfigPushAuthorizer checks each notification at send time, including
+// after a token is revoked. Configure it before serving requests.
+func (p *PushService) SetConfigPushAuthorizer(allowed func(connectionID, namespaceID, groupName, dataID string) bool) {
+	p.configPushAllowed = allowed
+}
+
+// SetOnUnregister releases connection-scoped authentication state.
+func (p *PushService) SetOnUnregister(cleanup func(connectionID string)) {
+	p.onUnregister = cleanup
 }
 
 // InstallCallbacks wires the push service into the config and naming
@@ -210,6 +223,9 @@ func (p *PushService) removeClientSubscriptions(connectionID string) {
 	delete(p.connectionServiceSubs, connectionID)
 	p.refreshSubGaugesLocked()
 	p.mu.Unlock()
+	if p.onUnregister != nil {
+		p.onUnregister(connectionID)
+	}
 }
 
 // notifyConfigChange is the callback installed on the config service. It
@@ -230,11 +246,16 @@ func (p *PushService) notifyConfigChange(namespaceID, groupName, dataID string) 
 		return
 	}
 	payload := buildConfigChangeNotify(namespaceID, groupName, dataID)
+	sent := 0
 	for _, connectionID := range connections {
+		if p.configPushAllowed != nil && !p.configPushAllowed(connectionID, namespaceID, groupName, dataID) {
+			continue
+		}
 		p.registry.Push(connectionID, payload)
+		sent++
 	}
 	if p.metrics != nil {
-		p.metrics.pushConfigTotal.Add(int64(len(connections)))
+		p.metrics.pushConfigTotal.Add(int64(sent))
 	}
 }
 

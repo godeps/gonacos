@@ -21,6 +21,7 @@ type options struct {
 	SnapshotInterval time.Duration
 	Root             string
 	AuthSecret       string
+	NativeConfigAuth NativeConfigAuthorizer
 	SnapshotHMACKey  string
 	TLSCertFile      string
 	TLSKeyFile       string
@@ -372,6 +373,14 @@ func WithRoot(root string) Option {
 // across nodes). Falls back to the GONACOS_AUTH_SECRET env var.
 func WithAuthSecret(secret string) Option {
 	return func(o *options) { o.AuthSecret = secret }
+}
+
+// WithNativeConfigAuth restricts the HTTP listener to the Nacos SDK login
+// endpoint and restricts gRPC to authenticated config reads and subscriptions.
+// The callback must validate the presented secret on every call. Empty scope
+// fields mean a login or connection check; callers must still check audience.
+func WithNativeConfigAuth(authorize NativeConfigAuthorizer) Option {
+	return func(o *options) { o.NativeConfigAuth = authorize }
 }
 
 // WithSnapshotHMACKey sets the HMAC-SHA256 key used to authenticate the

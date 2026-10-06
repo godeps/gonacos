@@ -184,6 +184,12 @@ func New(opts ...Option) (*Server, error) {
 		push.InstallCallbacks()
 	}
 	grpcSrv := app.SetupGRPCServerWithPush(bundle, push)
+	if o.NativeConfigAuth != nil {
+		guard := &nativeConfigGuard{authorize: o.NativeConfigAuth}
+		grpcSrv.AuthorizeRequest = guard.authorizeRequest
+		push.SetConfigPushAuthorizer(guard.allowPush)
+		push.SetOnUnregister(guard.forget)
+	}
 	// Forward gRPC panic recovery logs to the same logger the HTTP side
 	// uses, so a single log stream covers both protocols.
 	grpcSrv.Logf = func(format string, args ...any) {
@@ -317,6 +323,9 @@ func New(opts ...Option) (*Server, error) {
 	}
 
 	httpHandler := app.NewHandlerWithServicesAndRegistry(o.resolveRoot(), bundle, coord, registry, readiness, o.buildLoginThrottle(), o.resolveMetricsToken())
+	if o.NativeConfigAuth != nil {
+		httpHandler = nativeConfigHTTPHandler(o.NativeConfigAuth)
+	}
 
 	// Recovery wraps the innermost handler so panics produce a 500 JSON
 	// response with the request ID instead of crashing the connection.

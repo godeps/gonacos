@@ -73,7 +73,7 @@ func RegisterNamingHandlers(d *UnaryDispatcher, naming NamingAdapter) {
 		return handleInstanceRequest(naming, req)
 	})
 	d.Register("SubscribeServiceRequest", func(ctx context.Context, req Payload) (Payload, error) {
-		return handleSubscribeRequest(naming, req, ClientIPFromContext(ctx))
+		return handleSubscribeRequest(naming, req, ConnectionIDFromContext(ctx))
 	})
 	d.Register("BatchInstanceRequest", func(ctx context.Context, req Payload) (Payload, error) {
 		return handleBatchInstanceRequest(naming, req)
@@ -98,7 +98,7 @@ func RegisterNamingHandlers(d *UnaryDispatcher, naming NamingAdapter) {
 type NamingAdapter interface {
 	RegisterInstanceFromGRPC(body []byte) (any, error)
 	DeregisterInstanceFromGRPC(body []byte) error
-	SubscribeFromGRPC(body []byte, clientIP string) (any, error)
+	SubscribeFromGRPC(body []byte, connectionID string) (any, error)
 	ListInstancesFromGRPC(body []byte) (any, error)
 	QueryServiceFromGRPC(body []byte) (any, error)
 	ListServicesFromGRPC(body []byte) (any, error)
@@ -145,8 +145,8 @@ func handleInstanceRequest(naming NamingAdapter, req Payload) (Payload, error) {
 	}
 }
 
-func handleSubscribeRequest(naming NamingAdapter, req Payload, clientIP string) (Payload, error) {
-	result, err := naming.SubscribeFromGRPC(req.Body.Value, clientIP)
+func handleSubscribeRequest(naming NamingAdapter, req Payload, connectionID string) (Payload, error) {
+	result, err := naming.SubscribeFromGRPC(req.Body.Value, connectionID)
 	if err != nil {
 		return buildErrorResponse("SubscribeServiceResponse", err), nil
 	}
@@ -246,8 +246,8 @@ func RegisterConfigHandlers(d *UnaryDispatcher, config ConfigAdapter) {
 		}), nil
 	})
 	d.Register("ConfigBatchListenRequest", func(ctx context.Context, req Payload) (Payload, error) {
-		ip := ClientIPFromContext(ctx)
-		result, err := config.BatchListenFromGRPC(req.Body.Value, ip)
+		connectionID := ConnectionIDFromContext(ctx)
+		result, err := config.BatchListenFromGRPC(req.Body.Value, connectionID, ClientIPFromContext(ctx))
 		if err != nil {
 			return buildErrorResponse("ConfigChangeBatchListenResponse", err), nil
 		}
@@ -271,7 +271,7 @@ type ConfigAdapter interface {
 	QueryFromGRPC(body []byte) (any, error)
 	RemoveFromGRPC(body []byte) (any, error)
 	BatchPublishFromGRPC(body []byte) (any, error)
-	BatchListenFromGRPC(body []byte, ip string) (any, error)
+	BatchListenFromGRPC(body []byte, connectionID, clientIP string) (any, error)
 }
 
 // RegisterAIHandlers wires the AI service into the unary dispatcher for
@@ -428,11 +428,11 @@ func SetupDefaultServerWithRegistry(naming NamingAdapter, config ConfigAdapter, 
 // ConnectionSetupRequest so the server can push notifications to the
 // client. The connection is unregistered when the loop exits.
 func handleBiStreamConnectionWithRegistry(ctx context.Context, recv func() (Payload, error), send func(Payload) error, registry *ConnectionRegistry) error {
-	clientIP := ClientIPFromContext(ctx)
+	connectionID := ConnectionIDFromContext(ctx)
 	registered := false
 	defer func() {
-		if registry != nil && registered && clientIP != "" {
-			registry.Unregister(clientIP)
+		if registry != nil && registered && connectionID != "" {
+			registry.Unregister(connectionID)
 		}
 	}()
 	for {
@@ -441,8 +441,8 @@ func handleBiStreamConnectionWithRegistry(ctx context.Context, recv func() (Payl
 			return nil // client disconnected
 		}
 		typeName := strings.TrimSpace(req.Metadata.Type)
-		if typeName == "ConnectionSetupRequest" && registry != nil && clientIP != "" {
-			registry.Register(clientIP, send)
+		if typeName == "ConnectionSetupRequest" && registry != nil && connectionID != "" {
+			registry.Register(connectionID, send)
 			registered = true
 		}
 		resp := buildConnectionResponse(typeName, req)

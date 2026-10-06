@@ -129,13 +129,13 @@ func (a namingGRPCAdapter) DeregisterInstanceFromGRPC(body []byte) error {
 	)
 }
 
-func (a namingGRPCAdapter) SubscribeFromGRPC(body []byte, clientIP string) (any, error) {
+func (a namingGRPCAdapter) SubscribeFromGRPC(body []byte, connectionID string) (any, error) {
 	var req sdkServiceQueryRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, fmt.Errorf("invalid subscribe request: %w", err)
 	}
-	if a.push != nil && clientIP != "" {
-		a.push.TrackServiceSubscription(clientIP, req.Namespace, req.Group, req.ServiceName, req.Subscribe)
+	if a.push != nil && connectionID != "" {
+		a.push.TrackServiceSubscription(connectionID, req.Namespace, req.Group, req.ServiceName, req.Subscribe)
 	}
 	instances, err := a.service.ListInstances(req.Namespace, req.Group, req.ServiceName, req.Cluster, req.HealthyOnly)
 	if err != nil {
@@ -357,7 +357,7 @@ func (c configGRPCAdapter) BatchPublishFromGRPC(body []byte) (any, error) {
 	return map[string]any{"published": len(raw.Items)}, nil
 }
 
-func (c configGRPCAdapter) BatchListenFromGRPC(body []byte, ip string) (any, error) {
+func (c configGRPCAdapter) BatchListenFromGRPC(body []byte, connectionID, clientIP string) (any, error) {
 	if c.service == nil {
 		return nil, errConfigBridgeNotReady
 	}
@@ -381,11 +381,11 @@ func (c configGRPCAdapter) BatchListenFromGRPC(body []byte, ip string) (any, err
 			DataID: ctx.DataID,
 			Tenant: ctx.Tenant,
 		})
-		if c.push != nil && ip != "" {
-			c.push.TrackConfigSubscription(ip, ctx.Tenant, ctx.Group, ctx.DataID, req.Listen)
+		if c.push != nil && connectionID != "" {
+			c.push.TrackConfigSubscription(connectionID, ctx.Tenant, ctx.Group, ctx.DataID, req.Listen)
 		}
 	}
-	changed := c.service.BatchListen(ip, contexts)
+	changed := c.service.BatchListen(clientIP, contexts)
 	out := make([]map[string]string, 0, len(changed))
 	for _, cfg := range changed {
 		out = append(out, map[string]string{

@@ -197,3 +197,44 @@ func TestPushService_UnregisterClient(t *testing.T) {
 		t.Fatalf("want 0 pushes after unregister, got %d", len(got))
 	}
 }
+
+// Two clients behind the same address must receive only notifications for
+// their own transport subscriptions. A closed stream must lose its entries.
+func TestPushService_IndependentTransportSubscriptions(t *testing.T) {
+	registry := grpc.NewConnectionRegistry()
+	configSvc := configsvc.NewService()
+	push := NewPushService(registry, configSvc, nil)
+	push.InstallCallbacks()
+
+	var gotA, gotB []grpc.Payload
+	registry.Register("transport-a", func(p grpc.Payload) error {
+		gotA = append(gotA, p)
+		return nil
+	})
+	registry.Register("transport-b", func(p grpc.Payload) error {
+		gotB = append(gotB, p)
+		return nil
+	})
+	push.TrackConfigSubscription("transport-a", "tenant-a", "G", "manifest", true)
+	push.TrackConfigSubscription("transport-b", "tenant-b", "G", "manifest", true)
+
+	for _, tenant := range []string{"tenant-a", "tenant-b"} {
+		if err := configSvc.Publish(configsvc.PublishRequest{
+			NamespaceID: tenant, GroupName: "G", DataID: "manifest", Content: tenant,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(gotA) != 1 || len(gotB) != 1 {
+		t.Fatalf("cross-transport push: A=%d B=%d", len(gotA), len(gotB))
+	}
+	registry.Unregister("transport-a")
+	if err := configSvc.Publish(configsvc.PublishRequest{
+		NamespaceID: "tenant-a", GroupName: "G", DataID: "manifest", Content: "updated",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(gotA) != 1 || len(push.connectionConfigSubs["transport-a"]) != 0 {
+		t.Fatalf("closed transport retained subscriptions: pushes=%d", len(gotA))
+	}
+}

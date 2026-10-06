@@ -20,29 +20,27 @@ import (
 //
 // The SDK opens a BiRequestStream and sends a ConnectionSetupRequest. The
 // gRPC layer registers the connection's send function in the
-// ConnectionRegistry, keyed by the client's IP address (extracted from the
-// HTTP request). When the SDK sends a ConfigBatchListenRequest or
-// SubscribeServiceRequest via the unary Request RPC, the handler reads the
-// client IP from the request metadata and calls TrackConfigSubscription /
-// TrackServiceSubscription to associate the IP with the subscribed keys.
+// ConnectionRegistry, keyed by an identity assigned to the accepted socket.
+// Unary requests on that same HTTP/2 connection use the same identity when
+// recording subscriptions.
 //
 // When a config or service changes, the service layer calls the push
-// callback. The PushService looks up the subscribed client IPs and pushes
+// callback. The PushService looks up the subscribed connections and pushes
 // the notification payload on each registered connection.
 //
-// Client IP is the correlation key because the Go SDK does not include the
-// connection ID in unary request headers. The SDK's BiRequestStream and
-// unary requests originate from the same process, so they share an IP.
+// Transport identity is the correlation key because the Go SDK does not
+// include the connection ID in unary request headers. Client IP cannot be
+// used here: unrelated clients behind one proxy or NAT may share an IP.
 type PushService struct {
 	registry *grpc.ConnectionRegistry
 	config   *configsvc.Service
 	naming   *namingsvc.Service
 
-	mu            sync.RWMutex
-	configSubs    map[string]map[string]bool // configKey -> set of clientIPs
-	serviceSubs   map[string]map[string]bool // serviceKey -> set of clientIPs
-	ipConfigSubs  map[string]map[string]bool // clientIP -> set of configKeys
-	ipServiceSubs map[string]map[string]bool // clientIP -> set of serviceKeys
+	mu                    sync.RWMutex
+	configSubs            map[string]map[string]bool // configKey -> set of connectionIDs
+	serviceSubs           map[string]map[string]bool // serviceKey -> set of connectionIDs
+	connectionConfigSubs  map[string]map[string]bool // connectionID -> set of configKeys
+	connectionServiceSubs map[string]map[string]bool // connectionID -> set of serviceKeys
 
 	metrics *pushMetrics
 }
@@ -77,12 +75,12 @@ func (p *PushService) refreshSubGaugesLocked() {
 		return
 	}
 	configTotal := 0
-	for _, ips := range p.configSubs {
-		configTotal += len(ips)
+	for _, connections := range p.configSubs {
+		configTotal += len(connections)
 	}
 	serviceTotal := 0
-	for _, ips := range p.serviceSubs {
-		serviceTotal += len(ips)
+	for _, connections := range p.serviceSubs {
+		serviceTotal += len(connections)
 	}
 	p.metrics.configSubsGauge.Set(int64(configTotal))
 	p.metrics.serviceSubsGauge.Set(int64(serviceTotal))
@@ -94,15 +92,17 @@ func NewPushService(registry *grpc.ConnectionRegistry, config *configsvc.Service
 	if registry == nil {
 		return nil
 	}
-	return &PushService{
-		registry:      registry,
-		config:        config,
-		naming:        naming,
-		configSubs:    map[string]map[string]bool{},
-		serviceSubs:   map[string]map[string]bool{},
-		ipConfigSubs:  map[string]map[string]bool{},
-		ipServiceSubs: map[string]map[string]bool{},
+	p := &PushService{
+		registry:              registry,
+		config:                config,
+		naming:                naming,
+		configSubs:            map[string]map[string]bool{},
+		serviceSubs:           map[string]map[string]bool{},
+		connectionConfigSubs:  map[string]map[string]bool{},
+		connectionServiceSubs: map[string]map[string]bool{},
 	}
+	registry.SetOnUnregister(p.removeClientSubscriptions)
+	return p
 }
 
 // ConnectionRegistry returns the underlying registry (for wiring into the
@@ -126,11 +126,11 @@ func (p *PushService) InstallCallbacks() {
 	}
 }
 
-// TrackConfigSubscription records that a client IP is listening to a
+// TrackConfigSubscription records that a connection identity is listening to a
 // config. subscribe=false removes the subscription. Called from the gRPC
-// ConfigBatchListenRequest handler and the HTTP listener endpoints.
-func (p *PushService) TrackConfigSubscription(clientIP, namespaceID, groupName, dataID string, subscribe bool) {
-	if p == nil || clientIP == "" {
+// ConfigBatchListenRequest handler.
+func (p *PushService) TrackConfigSubscription(connectionID, namespaceID, groupName, dataID string, subscribe bool) {
+	if p == nil || connectionID == "" {
 		return
 	}
 	ck := configKey(namespaceID, groupName, dataID)
@@ -140,23 +140,23 @@ func (p *PushService) TrackConfigSubscription(clientIP, namespaceID, groupName, 
 		if p.configSubs[ck] == nil {
 			p.configSubs[ck] = map[string]bool{}
 		}
-		p.configSubs[ck][clientIP] = true
-		if p.ipConfigSubs[clientIP] == nil {
-			p.ipConfigSubs[clientIP] = map[string]bool{}
+		p.configSubs[ck][connectionID] = true
+		if p.connectionConfigSubs[connectionID] == nil {
+			p.connectionConfigSubs[connectionID] = map[string]bool{}
 		}
-		p.ipConfigSubs[clientIP][ck] = true
+		p.connectionConfigSubs[connectionID][ck] = true
 	} else {
-		p.removeSub(p.configSubs, ck, clientIP)
-		p.removeSub(p.ipConfigSubs, clientIP, ck)
+		p.removeSub(p.configSubs, ck, connectionID)
+		p.removeSub(p.connectionConfigSubs, connectionID, ck)
 	}
 	p.refreshSubGaugesLocked()
 }
 
-// TrackServiceSubscription records that a client IP is subscribed to a
+// TrackServiceSubscription records that a connection identity is subscribed to a
 // service. subscribe=false removes the subscription. Called from the gRPC
 // SubscribeServiceRequest handler.
-func (p *PushService) TrackServiceSubscription(clientIP, namespaceID, groupName, serviceName string, subscribe bool) {
-	if p == nil || clientIP == "" {
+func (p *PushService) TrackServiceSubscription(connectionID, namespaceID, groupName, serviceName string, subscribe bool) {
+	if p == nil || connectionID == "" {
 		return
 	}
 	sk := serviceKey(namespaceID, groupName, serviceName)
@@ -166,14 +166,14 @@ func (p *PushService) TrackServiceSubscription(clientIP, namespaceID, groupName,
 		if p.serviceSubs[sk] == nil {
 			p.serviceSubs[sk] = map[string]bool{}
 		}
-		p.serviceSubs[sk][clientIP] = true
-		if p.ipServiceSubs[clientIP] == nil {
-			p.ipServiceSubs[clientIP] = map[string]bool{}
+		p.serviceSubs[sk][connectionID] = true
+		if p.connectionServiceSubs[connectionID] == nil {
+			p.connectionServiceSubs[connectionID] = map[string]bool{}
 		}
-		p.ipServiceSubs[clientIP][sk] = true
+		p.connectionServiceSubs[connectionID][sk] = true
 	} else {
-		p.removeSub(p.serviceSubs, sk, clientIP)
-		p.removeSub(p.ipServiceSubs, clientIP, sk)
+		p.removeSub(p.serviceSubs, sk, connectionID)
+		p.removeSub(p.connectionServiceSubs, connectionID, sk)
 	}
 	p.refreshSubGaugesLocked()
 }
@@ -188,24 +188,28 @@ func (p *PushService) removeSub(outer map[string]map[string]bool, outerKey, inne
 	}
 }
 
-// UnregisterClient removes all subscriptions for a client IP. Called when
+// UnregisterClient removes all subscriptions for a connection identity. Called when
 // the BiRequestStream closes.
-func (p *PushService) UnregisterClient(clientIP string) {
-	if p == nil || clientIP == "" {
+func (p *PushService) UnregisterClient(connectionID string) {
+	if p == nil || connectionID == "" {
 		return
 	}
+	p.registry.Unregister(connectionID)
+	p.removeClientSubscriptions(connectionID)
+}
+
+func (p *PushService) removeClientSubscriptions(connectionID string) {
 	p.mu.Lock()
-	for ck := range p.ipConfigSubs[clientIP] {
-		p.removeSub(p.configSubs, ck, clientIP)
+	for ck := range p.connectionConfigSubs[connectionID] {
+		p.removeSub(p.configSubs, ck, connectionID)
 	}
-	delete(p.ipConfigSubs, clientIP)
-	for sk := range p.ipServiceSubs[clientIP] {
-		p.removeSub(p.serviceSubs, sk, clientIP)
+	delete(p.connectionConfigSubs, connectionID)
+	for sk := range p.connectionServiceSubs[connectionID] {
+		p.removeSub(p.serviceSubs, sk, connectionID)
 	}
-	delete(p.ipServiceSubs, clientIP)
+	delete(p.connectionServiceSubs, connectionID)
 	p.refreshSubGaugesLocked()
 	p.mu.Unlock()
-	p.registry.Unregister(clientIP)
 }
 
 // notifyConfigChange is the callback installed on the config service. It
@@ -217,20 +221,20 @@ func (p *PushService) notifyConfigChange(namespaceID, groupName, dataID string) 
 	}
 	ck := configKey(namespaceID, groupName, dataID)
 	p.mu.RLock()
-	ips := make([]string, 0, len(p.configSubs[ck]))
-	for ip := range p.configSubs[ck] {
-		ips = append(ips, ip)
+	connections := make([]string, 0, len(p.configSubs[ck]))
+	for connectionID := range p.configSubs[ck] {
+		connections = append(connections, connectionID)
 	}
 	p.mu.RUnlock()
-	if len(ips) == 0 {
+	if len(connections) == 0 {
 		return
 	}
 	payload := buildConfigChangeNotify(namespaceID, groupName, dataID)
-	for _, ip := range ips {
-		p.registry.Push(ip, payload)
+	for _, connectionID := range connections {
+		p.registry.Push(connectionID, payload)
 	}
 	if p.metrics != nil {
-		p.metrics.pushConfigTotal.Add(int64(len(ips)))
+		p.metrics.pushConfigTotal.Add(int64(len(connections)))
 	}
 }
 
@@ -243,23 +247,23 @@ func (p *PushService) notifyServiceChange(namespaceID, groupName, serviceName st
 	}
 	sk := serviceKey(namespaceID, groupName, serviceName)
 	p.mu.RLock()
-	ips := make([]string, 0, len(p.serviceSubs[sk]))
-	for ip := range p.serviceSubs[sk] {
-		ips = append(ips, ip)
+	connections := make([]string, 0, len(p.serviceSubs[sk]))
+	for connectionID := range p.serviceSubs[sk] {
+		connections = append(connections, connectionID)
 	}
 	p.mu.RUnlock()
-	if len(ips) == 0 {
+	if len(connections) == 0 {
 		return
 	}
 	payload, err := buildNotifySubscriber(p.naming, namespaceID, groupName, serviceName)
 	if err != nil {
 		return
 	}
-	for _, ip := range ips {
-		p.registry.Push(ip, payload)
+	for _, connectionID := range connections {
+		p.registry.Push(connectionID, payload)
 	}
 	if p.metrics != nil {
-		p.metrics.pushServiceTotal.Add(int64(len(ips)))
+		p.metrics.pushServiceTotal.Add(int64(len(connections)))
 	}
 }
 

@@ -19,6 +19,26 @@ import (
 	"golang.org/x/net/http2"
 )
 
+// transportSequence gives every accepted socket a distinct local identity.
+// HTTP/2 unary and bidirectional streams on that socket share the identity,
+// while clients behind one NAT address do not share subscriptions.
+var transportSequence atomic.Uint64
+
+type transportIDKey struct{}
+
+func transportContext(ctx context.Context, _ net.Conn) context.Context {
+	return context.WithValue(ctx, transportIDKey{}, transportSequence.Add(1))
+}
+
+// ConnectionIDFromContext returns the identity of the accepted transport.
+// An empty result means the request did not pass through a serving socket.
+func ConnectionIDFromContext(ctx context.Context) string {
+	if id, ok := ctx.Value(transportIDKey{}).(uint64); ok && id != 0 {
+		return fmt.Sprintf("transport-%d", id)
+	}
+	return ""
+}
+
 // Status codes matching gRPC's codes.Code.
 const (
 	StatusOK                 = 0
@@ -494,6 +514,7 @@ func (s *Server) Serve(ln net.Listener) error {
 		IdleTimeout:       5 * time.Minute,
 		ReadHeaderTimeout: 5 * time.Second,
 		Protocols:         protocols,
+		ConnContext:       transportContext,
 	}
 	s.configureHTTP2(s.server)
 	s.mu.Unlock()
@@ -523,6 +544,7 @@ func (s *Server) ServeTLS(ln net.Listener, certFile, keyFile string) error {
 		Handler:           s,
 		IdleTimeout:       5 * time.Minute,
 		ReadHeaderTimeout: 5 * time.Second,
+		ConnContext:       transportContext,
 	}
 	s.configureHTTP2(s.server)
 	s.mu.Unlock()
@@ -543,6 +565,7 @@ func (s *Server) ServeTLSConfig(ln net.Listener, cfg *tls.Config) error {
 		IdleTimeout:       5 * time.Minute,
 		ReadHeaderTimeout: 5 * time.Second,
 		TLSConfig:         cfg,
+		ConnContext:       transportContext,
 	}
 	s.configureHTTP2(s.server)
 	s.mu.Unlock()
@@ -617,7 +640,7 @@ func (s *Server) Addr() net.Addr {
 
 // clientIPKey is the context key used to carry the remote client IP from the
 // HTTP layer into the gRPC handler. Handlers use ClientIPFromContext to
-// recover the IP for listener tracking and beta-aware config queries.
+// recover the IP for rate limiting and beta-aware config queries.
 type clientIPKey struct{}
 
 // ClientIPFromContext returns the client IP injected by the server, or "" if
@@ -764,7 +787,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// observes 0 — distinct from a small legitimate request.
 		var reqN int64
 		if cr != nil {
-			reqN = cr.n
+			reqN = cr.n.Load()
 		}
 		s.MetricsRegistry.Histogram("gonacos_grpc_request_bytes",
 			map[string]string{"method": r.URL.Path},
@@ -811,12 +834,12 @@ func (r *grpcResponseRecorder) Flush() {
 // that decodes a large payload reads all of them).
 type countingReader struct {
 	io.ReadCloser
-	n int64
+	n atomic.Int64
 }
 
 func (r *countingReader) Read(p []byte) (int, error) {
 	n, err := r.ReadCloser.Read(p)
-	r.n += int64(n)
+	r.n.Add(int64(n))
 	return n, err
 }
 
@@ -943,7 +966,10 @@ func (s *Server) handleBiStream(ctx context.Context, w http.ResponseWriter, r *h
 		}
 		return DecodePayload(frame.Payload)
 	}
+	var sendMu sync.Mutex
 	send := func(p Payload) error {
+		sendMu.Lock()
+		defer sendMu.Unlock()
 		return writeGRPCStreamFrame(w, flusher, p)
 	}
 	if err := h(ctx, recv, send); err != nil {

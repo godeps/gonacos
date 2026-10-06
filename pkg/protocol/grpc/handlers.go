@@ -393,7 +393,17 @@ func SetupDefaultServer(naming NamingAdapter, config ConfigAdapter, ai AIAdapter
 // SetupDefaultServerWithRegistry is like SetupDefaultServer but wires a
 // ConnectionRegistry into the BiRequestStream handler for server push.
 func SetupDefaultServerWithRegistry(naming NamingAdapter, config ConfigAdapter, ai AIAdapter, registry *ConnectionRegistry) *Server {
-	srv := DefaultServer()
+	return setupServerWithRegistry(DefaultServer(), naming, config, ai, registry)
+}
+
+// SetupServerWithRegistry creates an independent gRPC server with the
+// standard dispatcher and optional push connection registry. Embedded server
+// instances must use this instead of the package-level DefaultServer.
+func SetupServerWithRegistry(naming NamingAdapter, config ConfigAdapter, ai AIAdapter, registry *ConnectionRegistry) *Server {
+	return setupServerWithRegistry(NewServer(), naming, config, ai, registry)
+}
+
+func setupServerWithRegistry(srv *Server, naming NamingAdapter, config ConfigAdapter, ai AIAdapter, registry *ConnectionRegistry) *Server {
 	d := DefaultDispatcher(naming, config, ai)
 	srv.RegisterUnary("Request/request", d.Handle)
 	// Register the stream service with a type-based dispatch.

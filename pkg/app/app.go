@@ -111,7 +111,7 @@ func SetupGRPCServerWithPush(services *ServiceBundle, push *PushService) *grpcsr
 	if push != nil {
 		registry = push.ConnectionRegistry()
 	}
-	return grpcsrv.SetupDefaultServerWithRegistry(
+	return grpcsrv.SetupServerWithRegistry(
 		namingGRPCAdapter{service: services.Naming, push: push},
 		configGRPCAdapter{service: services.Config, push: push},
 		aiGRPCAdapter{service: services.AI},
@@ -270,9 +270,9 @@ func stateHandler(w http.ResponseWriter, r *http.Request) {
 		"last_refresh_time":     strconv.FormatInt(now, 10),
 		"last_refresh_time_str": time.UnixMilli(now).Format(time.RFC3339),
 		// Fields expected by the Java React console (server-store.ts).
-		"login_page_enabled":    "true",
-		"auth_enabled":          "true",
-		"console_ui_enabled":    "true",
+		"login_page_enabled": "true",
+		"auth_enabled":       "true",
+		"console_ui_enabled": "true",
 		// admin user is auto-bootstrapped at startup with the default
 		// password (nacos/nacos), so the console's "initialize admin"
 		// register page is skipped — operators land on the login page

@@ -205,4 +205,4 @@ gonacos/
 
 ## License
 
-MIT(占位 — 发布前确认)。
+gonacos 采用 [Apache License, Version 2.0](LICENSE)。此授权覆盖仓库历史中的项目原创贡献，包括提交 `514208bd40a131b5badb830bff2daf704ab97ee9`。第三方文件保留其原有版权与许可声明；见 [NOTICE](NOTICE)。

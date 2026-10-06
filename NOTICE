@@ -1,0 +1,12 @@
+gonacos
+
+Original gonacos contributions are made available under the Apache License,
+Version 2.0. The license grant covers the project history through commit
+514208bd40a131b5badb830bff2daf704ab97ee9 as well as later contributions
+submitted under that license.
+
+This repository includes files from the Nacos project with copyright notices
+attributed to Alibaba Group Holding Ltd. Those files remain under their
+existing Apache License, Version 2.0 terms and retain their original headers.
+The Apache-2.0 license grant for gonacos does not replace the notices or
+licenses of included third-party code and generated frontend assets.

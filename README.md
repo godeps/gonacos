@@ -302,4 +302,4 @@ gonacos/
 
 ## License
 
-MIT (placeholder — confirm before publishing).
+gonacos is licensed under the [Apache License, Version 2.0](LICENSE). This grant covers the project-authored contributions in repository history, including commit `514208bd40a131b5badb830bff2daf704ab97ee9`. Third-party files retain their existing copyright and license notices; see [NOTICE](NOTICE).

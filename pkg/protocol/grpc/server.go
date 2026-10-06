@@ -138,6 +138,11 @@ type Server struct {
 	server   *http.Server
 	listener net.Listener
 
+	// AuthorizeRequest, when set, checks every decoded request frame before
+	// dispatch. Streaming frames are checked individually so a peer cannot
+	// authenticate its setup frame and then send an unauthorized request.
+	AuthorizeRequest func(context.Context, string, Payload) error
+
 	// activeStreams tracks the number of in-flight gRPC requests
 	// (unary + streaming). Incremented on ServeHTTP entry, decremented
 	// on exit via defer. Reported via gonacos_grpc_active_streams gauge
@@ -878,6 +883,13 @@ func (s *Server) handleUnary(ctx context.Context, w http.ResponseWriter, r *http
 		writeGRPCStatus(w, StatusInternal, "decode payload: "+err.Error())
 		return
 	}
+	if s.AuthorizeRequest != nil {
+		if err := s.AuthorizeRequest(ctx, r.URL.Path, req); err != nil {
+			code, msg := statusFromError(err)
+			writeGRPCStatus(w, code, msg)
+			return
+		}
+	}
 	resp, err := h(ctx, req)
 	if err != nil {
 		code, msg := statusFromError(err)
@@ -915,6 +927,13 @@ func (s *Server) handleStream(ctx context.Context, w http.ResponseWriter, r *htt
 	if err != nil {
 		writeGRPCStatus(w, StatusInternal, "decode payload: "+err.Error())
 		return
+	}
+	if s.AuthorizeRequest != nil {
+		if err := s.AuthorizeRequest(ctx, r.URL.Path, req); err != nil {
+			code, msg := statusFromError(err)
+			writeGRPCStatus(w, code, msg)
+			return
+		}
 	}
 
 	flusher, ok := w.(http.Flusher)
@@ -964,7 +983,16 @@ func (s *Server) handleBiStream(ctx context.Context, w http.ResponseWriter, r *h
 			}
 			return Payload{}, err
 		}
-		return DecodePayload(frame.Payload)
+		req, err := DecodePayload(frame.Payload)
+		if err != nil {
+			return Payload{}, err
+		}
+		if s.AuthorizeRequest != nil {
+			if err := s.AuthorizeRequest(ctx, r.URL.Path, req); err != nil {
+				return Payload{}, err
+			}
+		}
+		return req, nil
 	}
 	var sendMu sync.Mutex
 	send := func(p Payload) error {

@@ -3,7 +3,9 @@ package grpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -438,7 +440,10 @@ func handleBiStreamConnectionWithRegistry(ctx context.Context, recv func() (Payl
 	for {
 		req, err := recv()
 		if err != nil {
-			return nil // client disconnected
+			if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
+				return nil // client disconnected
+			}
+			return err
 		}
 		typeName := strings.TrimSpace(req.Metadata.Type)
 		if typeName == "ConnectionSetupRequest" && registry != nil && connectionID != "" {

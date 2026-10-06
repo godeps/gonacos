@@ -155,6 +155,45 @@ func TestServerUnaryHandlerReturnsPayload(t *testing.T) {
 	}
 }
 
+func TestServerAuthorizerRejectsBeforeUnaryDispatch(t *testing.T) {
+	t.Parallel()
+	srv := NewServer()
+	called := false
+	srv.RegisterUnary("Request/request", func(context.Context, Payload) (Payload, error) {
+		called = true
+		return Payload{Metadata: Metadata{Type: "TestResponse"}}, nil
+	})
+	srv.AuthorizeRequest = func(_ context.Context, method string, req Payload) error {
+		if method != "/Request/request" || req.Metadata.Type != "TestRequest" {
+			t.Fatalf("unexpected authorization input: %s %s", method, req.Metadata.Type)
+		}
+		return NewStatusError(StatusPermissionDenied, "scope denied")
+	}
+	go func() { _ = srv.ListenAndServe("127.0.0.1:0") }()
+	for range 50 {
+		if srv.Addr() != nil {
+			break
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	if srv.Addr() == nil {
+		t.Fatal("server did not start")
+	}
+	t.Cleanup(func() { _ = srv.Shutdown(t.Context()) })
+	resp, err := http.Post("http://"+srv.Addr().String()+"/Request/request", "application/grpc",
+		bytes.NewReader(encodeGRPCRequestBody(Payload{Metadata: Metadata{Type: "TestRequest"}})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if got := resp.Header.Get("grpc-status"); got != "7" {
+		t.Fatalf("grpc-status = %q, want PERMISSION_DENIED", got)
+	}
+	if called {
+		t.Fatal("unauthorized request reached handler")
+	}
+}
+
 func TestServerUnaryHandlerReturnsErrorStatus(t *testing.T) {
 	t.Parallel()
 	srv := NewServer()
